@@ -4,20 +4,90 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nexus POS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+      }
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      .dark {
+        color-scheme: dark;
+      }
+
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: #f3f4f6;
+        transition: background-color 0.3s ease, color 0.3s ease;
+      }
+      
+      /* Dark mode overrides for body if Tailwind class is applied to html */
+      .dark body {
+        background-color: #0f172a; /* slate-900 */
+        color: #f1f5f9; /* slate-100 */
+      }
+
+      /* Firefox Scrollbar Support */
+      html {
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e1 transparent;
+      }
+      html.dark {
+        scrollbar-color: #334155 transparent;
+      }
+
+      /* Custom scrollbar for cleaner UI */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+      
+      .dark ::-webkit-scrollbar-thumb {
+        background: #334155;
+      }
+      .dark ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+      }
+
+      /* Animations */
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .animate-fade-in {
+        animation: fadeIn 0.2s ease-out;
+      }
+    </style>
   <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
     "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
     "recharts": "https://esm.sh/recharts@^3.6.0",
-    "qrcode": "https://esm.sh/qrcode@^1.5.4",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "qrcode": "https://esm.sh/qrcode@1.5.3",
+    "firebase/app": "https://esm.sh/firebase@10.8.0/app",
+    "firebase/auth": "https://esm.sh/firebase@10.8.0/auth",
+    "firebase/firestore": "https://esm.sh/firebase@10.8.0/firestore",
     "firebase/": "https://esm.sh/firebase@^12.7.0/",
-    "vite": "https://esm.sh/vite@^7.3.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "vite": "https://esm.sh/vite@^7.3.0"
   }
 }
 </script>
