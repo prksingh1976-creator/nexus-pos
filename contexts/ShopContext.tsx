@@ -68,18 +68,56 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [tags, setTags] = useState<string[]>([]);
   const [chargeRules, setChargeRules] = useState<ChargeRule[]>([]);
 
-  // Initialize Firebase if config exists
+  // Initialize Firebase and Session
   useEffect(() => {
+      // 1. Load Local Config & Initialize Firebase
       const savedConfig = safeParse(FIREBASE_CONFIG_KEY, null);
+      let unsubscribeAuth = () => {};
+
       if (savedConfig) {
           const success = Cloud.initializeFirebase(savedConfig);
-          if (success) setIsCloudEnabled(true);
+          if (success) {
+              setIsCloudEnabled(true);
+              
+              // 2. Subscribe to Firebase Auth State (Handles persistence)
+              unsubscribeAuth = Cloud.onAuthStateChange(async (fbUser) => {
+                  if (fbUser) {
+                      // Check if we need to restore session
+                      const storedUser = safeParse(`${STORAGE_KEY_PREFIX}user`, null);
+                      
+                      // If no local user, or ID mismatch, sync from Cloud
+                      if (!storedUser || storedUser.id !== fbUser.uid) {
+                          console.log("Restoring session from Firebase...");
+                          try {
+                              const profile = await Cloud.getUserProfile(fbUser.uid);
+                              const userData: User = profile || {
+                                  id: fbUser.uid,
+                                  name: fbUser.displayName || 'Shop Owner',
+                                  email: fbUser.email || '',
+                                  preferences: { theme: 'light' }
+                              };
+                              
+                              setUser(userData);
+                              // Sync to local storage
+                              localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(userData));
+                              localStorage.setItem(`${STORAGE_KEY_PREFIX}${userData.id}_profile`, JSON.stringify(userData));
+                          } catch (e) {
+                              console.error("Failed to restore cloud profile", e);
+                          }
+                      }
+                  }
+              });
+          }
       }
       
-      // Load User from Session
+      // 3. Load User from LocalStorage (Fast Path)
       const savedUser = safeParse(`${STORAGE_KEY_PREFIX}user`, null);
       if (savedUser) {
         setUser(savedUser);
+      }
+
+      return () => {
+          unsubscribeAuth();
       }
   }, []);
 
@@ -118,11 +156,10 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubProfile = Cloud.subscribeToProfile(user.id, (profile) => {
             if (profile) {
                  setUser(prev => {
-                     const strPrev = JSON.stringify(prev);
-                     const strNew = JSON.stringify(profile);
-                     if (strPrev !== strNew) {
-                         localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, strNew);
-                         localStorage.setItem(`${STORAGE_KEY_PREFIX}${profile.id}_profile`, strNew);
+                     // Only update if something changed to avoid render loops
+                     if (prev && JSON.stringify(prev) !== JSON.stringify(profile)) {
+                         localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(profile));
+                         localStorage.setItem(`${STORAGE_KEY_PREFIX}${profile.id}_profile`, JSON.stringify(profile));
                          return profile;
                      }
                      return prev;

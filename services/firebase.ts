@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from "firebase/auth";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, Firestore, collection } from "firebase/firestore";
 
 let app: FirebaseApp | undefined;
@@ -22,6 +22,11 @@ export const initializeFirebase = (config: any) => {
         console.error("Firebase Initialization Error:", e);
         return false;
     }
+};
+
+export const onAuthStateChange = (callback: (user: FirebaseUser | null) => void) => {
+    if (!auth) return () => {};
+    return onAuthStateChanged(auth, callback);
 };
 
 export const loginWithGoogle = async () => {
