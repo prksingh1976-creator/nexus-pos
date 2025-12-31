@@ -6,9 +6,8 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [react()],
-    // Use the repo name only when building for production (GitHub Pages)
-    // Otherwise use root '/' for local development
-    base: command === 'build' ? '/nexus-pos/' : '/', 
+    // Use relative paths so the app works on any subdirectory (e.g. GitHub Pages)
+    base: './', 
     define: {
       'process.env.API_KEY': JSON.stringify(env.VITE_API_KEY)
     }
