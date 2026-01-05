@@ -23,7 +23,9 @@ interface ShopContextType {
   addCustomer: (customer: Customer) => void;
   updateCustomer: (customer: Customer) => void;
   processTransaction: (transaction: Transaction) => void;
-  updateOrderStatus: (transactionId: string, status: 'completed' | 'queued' | 'cancelled', paymentMethod?: 'cash' | 'account' | 'upi') => void;
+  updateTransaction: (transaction: Transaction) => void;
+  deleteTransaction: (id: string) => void;
+  updateOrderStatus: (transactionId: string, status: 'completed' | 'queued' | 'cancelled', paymentMethod?: 'cash' | 'account' | 'upi' | 'pending') => void;
   addCategory: (category: string) => void;
   deleteCategory: (category: string) => void;
   addTag: (tag: string) => void;
@@ -392,7 +394,37 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateOrderStatus = (transactionId: string, status: 'completed' | 'queued' | 'cancelled', paymentMethod?: 'cash' | 'account' | 'upi') => {
+  // Used for editing items, name, or details of an existing transaction without affecting stock
+  const updateTransaction = (transaction: Transaction) => {
+    const updatedTransactions = transactions.map(t => t.id === transaction.id ? transaction : t);
+    setTransactions(updatedTransactions);
+    saveData('transactions', updatedTransactions);
+  };
+
+  const deleteTransaction = (id: string) => {
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) return;
+
+    // Revert Stock if active (i.e. not already cancelled)
+    if (tx.status !== 'cancelled') {
+        const updatedProducts = [...products];
+        tx.items.forEach(item => {
+            const pIndex = updatedProducts.findIndex(p => p.id === item.id);
+            if (pIndex > -1) {
+                updatedProducts[pIndex].stock += item.quantity;
+            }
+        });
+        setProducts(updatedProducts);
+        saveData('products', updatedProducts);
+    }
+    
+    // Remove transaction
+    const updatedTransactions = transactions.filter(t => t.id !== id);
+    setTransactions(updatedTransactions);
+    saveData('transactions', updatedTransactions);
+  };
+
+  const updateOrderStatus = (transactionId: string, status: 'completed' | 'queued' | 'cancelled', paymentMethod?: 'cash' | 'account' | 'upi' | 'pending') => {
       let updatedTransactions = [...transactions];
       const txIndex = updatedTransactions.findIndex(t => t.id === transactionId);
       
@@ -503,7 +535,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       products, customers, transactions, categories, tags, chargeRules,
       addProduct, updateProduct, deleteProduct,
       addCustomer, updateCustomer,
-      processTransaction, updateOrderStatus, updateUserUpi,
+      processTransaction, updateTransaction, deleteTransaction, updateOrderStatus, updateUserUpi,
       addCategory, deleteCategory, addTag, deleteTag,
       addChargeRule, updateChargeRule, deleteChargeRule,
       importData

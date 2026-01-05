@@ -42,8 +42,9 @@ export interface Transaction {
   charges: AppliedCharge[]; // Tax, discounts, fees applied
   total: number; // Final amount paid
   type: 'sale' | 'payment' | 'refund';
-  paymentMethod: 'cash' | 'account' | 'upi'; 
-  status: 'completed' | 'queued' | 'cancelled'; // New status field
+  paymentMethod: 'cash' | 'account' | 'upi' | 'pending'; 
+  status: 'completed' | 'queued' | 'cancelled'; 
+  queueName?: string; // Custom name for the order (e.g. "Table 5")
 }
 
 export interface Customer {

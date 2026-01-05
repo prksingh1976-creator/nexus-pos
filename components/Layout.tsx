@@ -11,7 +11,6 @@ export const Layout: React.FC = () => {
   const location = useLocation();
 
   // Close sidebar on route change (mobile)
-  // MOVED UP before conditional return to satisfy React Hooks rules
   React.useEffect(() => {
     setSidebarOpen(false);
   }, [location]);
@@ -19,55 +18,66 @@ export const Layout: React.FC = () => {
   if (!user) return <Outlet />;
 
   const navClasses = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center space-x-3 p-3 rounded-lg transition-colors mb-1 ${
+    `flex items-center space-x-2.5 p-2.5 rounded-lg transition-all duration-200 mb-1 text-sm ${
       isActive
-        ? 'bg-blue-600 text-white shadow-md'
-        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+        ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 translate-x-1'
+        : 'text-slate-400 hover:bg-slate-800/50 hover:text-white hover:translate-x-1'
     }`;
 
   return (
-    <div className="flex h-screen bg-slate-100 dark:bg-slate-900 overflow-hidden relative transition-colors duration-300">
-      {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 text-white flex items-center justify-between px-4 z-30 shadow-md">
-        <div className="flex items-center">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 mr-2 text-slate-300 hover:text-white">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden relative transition-colors duration-300 font-sans">
+      {/* Mobile Header with Glassmorphism */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md text-slate-800 dark:text-white flex items-center justify-between px-4 z-30 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setSidebarOpen(!sidebarOpen)} 
+              className="p-2 -ml-2 text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition-transform"
+            >
                 <Icons.Menu />
             </button>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+            <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-emerald-500 bg-clip-text text-transparent">
                 Nexus POS
             </h1>
         </div>
-        {/* Placeholder for right side balance or user icon if needed */}
-        <div className="w-8"></div>
+        <div 
+            onClick={() => setShowSettings(true)}
+            className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs shadow-md cursor-pointer"
+        >
+            {user.name.charAt(0)}
+        </div>
       </div>
 
       {/* Sidebar Overlay for Mobile */}
       {sidebarOpen && (
           <div 
-            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 md:hidden transition-opacity"
             onClick={() => setSidebarOpen(false)}
           />
       )}
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col transition-transform duration-300 ease-in-out md:relative md:translate-x-0
+        fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col transition-transform duration-300 ease-out md:relative md:translate-x-0 shadow-2xl md:shadow-none
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="p-6 hidden md:block">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-            Nexus POS
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">Shop Management System</p>
+          <div className="flex items-center gap-2.5 mb-1">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-emerald-400 flex items-center justify-center text-white font-bold text-sm">N</div>
+            <h1 className="text-xl font-bold tracking-tight">
+              Nexus POS
+            </h1>
+          </div>
+          <p className="text-[10px] text-slate-500 font-medium pl-10 uppercase tracking-wide">Shop Manager</p>
         </div>
 
-        {/* Mobile Header inside Sidebar for spacing consistency */}
-        <div className="md:hidden h-16 flex items-center px-6 border-b border-slate-800 mb-2">
-             <span className="font-bold text-lg">Menu</span>
-             <button onClick={() => setSidebarOpen(false)} className="ml-auto text-slate-400"><Icons.X /></button>
+        {/* Mobile Sidebar Header */}
+        <div className="md:hidden h-16 flex items-center px-6 mb-2">
+             <span className="font-bold text-lg text-white">Menu</span>
+             <button onClick={() => setSidebarOpen(false)} className="ml-auto p-2 text-slate-400 hover:text-white bg-slate-800 rounded-lg"><Icons.X /></button>
         </div>
 
-        <nav className="flex-1 px-4 overflow-y-auto pt-2 md:pt-0">
+        <nav className="flex-1 px-3 overflow-y-auto py-4">
+          <p className="px-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-2">Apps</p>
           <NavLink to="/" className={navClasses}>
             <Icons.Dashboard />
             <span className="font-medium">Dashboard</span>
@@ -80,6 +90,8 @@ export const Layout: React.FC = () => {
             <Icons.Orders />
             <span className="font-medium">Orders</span>
           </NavLink>
+          
+          <p className="px-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-2 mt-6">Management</p>
           <NavLink to="/inventory" className={navClasses}>
             <Icons.Inventory />
             <span className="font-medium">Inventory</span>
@@ -90,26 +102,26 @@ export const Layout: React.FC = () => {
           </NavLink>
         </nav>
 
-        {/* User Profile Section - Clickable to open Settings */}
-        <div className="p-4 border-t border-slate-800">
+        {/* User Profile Section */}
+        <div className="p-3 m-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
           <div 
             onClick={() => setShowSettings(true)}
-            className="flex items-center space-x-3 mb-4 cursor-pointer hover:bg-slate-800 p-2 rounded-lg transition-colors group"
+            className="flex items-center space-x-2.5 mb-3 cursor-pointer hover:bg-slate-700/50 p-2 rounded-lg transition-all group"
           >
-            <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center font-bold text-lg text-white group-hover:bg-blue-400 transition-colors">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center font-bold text-sm text-white shadow-lg">
               {user.name.charAt(0)}
             </div>
             <div className="overflow-hidden flex-1">
-              <p className="text-sm font-medium truncate group-hover:text-blue-300 transition-colors">{user.name}</p>
-              <p className="text-xs text-slate-500 truncate">{user.email}</p>
+              <p className="text-sm font-semibold text-slate-200 truncate group-hover:text-blue-300 transition-colors">{user.name}</p>
+              <p className="text-[10px] text-slate-500 truncate">Settings</p>
             </div>
-            <div className="text-slate-500 group-hover:text-white">
+            <div className="text-slate-500 group-hover:text-white transition-colors scale-90">
                 <Icons.Settings />
             </div>
           </div>
           <button
             onClick={logout}
-            className="w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-red-600/20 hover:text-red-400 text-slate-400 py-2 rounded transition-colors text-sm"
+            className="w-full flex items-center justify-center space-x-2 bg-slate-900 hover:bg-red-500/10 hover:text-red-400 text-slate-400 py-2 rounded-lg transition-all text-xs font-medium border border-slate-700 hover:border-red-500/30"
           >
             <Icons.Logout />
             <span>Sign Out</span>
@@ -118,7 +130,7 @@ export const Layout: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto relative mt-16 md:mt-0 w-full">
+      <main className="flex-1 overflow-x-hidden overflow-y-auto relative mt-14 md:mt-0 w-full scroll-smooth">
         <Outlet />
       </main>
 

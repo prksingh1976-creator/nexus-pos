@@ -52,7 +52,6 @@ export const Customers: React.FC = () => {
       }
 
       if (showActionModal === 'settle') {
-          // Debt Payment
           processTransaction({
               id: crypto.randomUUID(),
               customerId: selectedCustomer.id,
@@ -67,7 +66,6 @@ export const Customers: React.FC = () => {
               status: 'completed'
           });
       } else if (showActionModal === 'adjust') {
-          // Add Debt (Lending)
           processTransaction({
               id: crypto.randomUUID(),
               customerId: selectedCustomer.id,
@@ -99,125 +97,132 @@ export const Customers: React.FC = () => {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto h-full flex flex-col">
-      <header className="flex justify-between items-center mb-8">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto h-[calc(100vh-4rem)] md:h-screen flex flex-col">
+      <header className="flex justify-between items-center mb-6">
         <div>
            <h2 className="text-3xl font-bold text-slate-800 dark:text-white">Customers</h2>
            <p className="text-slate-500 dark:text-slate-400">Manage profiles and credit history.</p>
         </div>
         <button 
             onClick={() => setShowAddModal(true)}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center space-x-2 transition-all shadow-lg shadow-blue-200 dark:shadow-none"
+            className="w-10 h-10 md:w-auto md:h-auto md:px-6 md:py-2.5 bg-blue-600 text-white rounded-full md:rounded-xl hover:bg-blue-700 font-bold flex items-center justify-center space-x-2 shadow-lg shadow-blue-500/30 active:scale-95 transition-all"
         >
             <Icons.Plus />
-            <span>Add Customer</span>
+            <span className="hidden md:inline">Add Customer</span>
         </button>
       </header>
 
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex-1 flex overflow-hidden transition-colors">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex-1 flex overflow-hidden relative">
         {/* List View */}
-        <div className={`w-full md:w-1/3 border-r border-slate-200 dark:border-slate-700 flex flex-col ${selectedCustomer ? 'hidden md:flex' : 'flex'}`}>
+        <div className={`w-full md:w-80 lg:w-96 border-r border-slate-200 dark:border-slate-700 flex flex-col ${selectedCustomer ? 'hidden md:flex' : 'flex'}`}>
             <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                 <input 
                     type="text" 
                     placeholder="Search customers..." 
-                    className="w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white placeholder:text-slate-400"
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white placeholder:text-slate-400 transition-all"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
             </div>
             <div className="flex-1 overflow-y-auto">
-                {filteredCustomers.map(c => (
-                    <div 
-                        key={c.id} 
-                        onClick={() => setSelectedCustomer(c)}
-                        className={`p-4 border-b border-slate-100 dark:border-slate-700/50 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${selectedCustomer?.id === c.id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-l-blue-500' : ''}`}
-                    >
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <h4 className="font-semibold text-slate-800 dark:text-white">{c.name}</h4>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">{c.email}</p>
+                {filteredCustomers.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400">No customers found.</div>
+                ) : (
+                    filteredCustomers.map(c => (
+                        <div 
+                            key={c.id} 
+                            onClick={() => setSelectedCustomer(c)}
+                            className={`p-4 border-b border-slate-100 dark:border-slate-700/50 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${selectedCustomer?.id === c.id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'}`}
+                        >
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h4 className="font-bold text-slate-800 dark:text-white">{c.name}</h4>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{c.phone || c.email}</p>
+                                </div>
+                                {c.balance > 0 && (
+                                    <span className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 text-[10px] uppercase font-bold px-2 py-1 rounded-full">
+                                        ₹{c.balance.toFixed(0)} Due
+                                    </span>
+                                )}
                             </div>
-                            {c.balance > 0 && (
-                                <span className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs px-2 py-1 rounded-full font-medium">
-                                    Owes ₹{c.balance.toFixed(2)}
-                                </span>
-                            )}
                         </div>
-                    </div>
-                ))}
+                    ))
+                )}
             </div>
         </div>
 
-        {/* Detail View */}
-        <div className={`flex-1 flex flex-col bg-white dark:bg-slate-800 ${!selectedCustomer ? 'hidden md:flex' : 'flex'}`}>
+        {/* Detail View (Desktop: Right Side, Mobile: Full Overlay) */}
+        <div className={`flex-1 flex flex-col bg-white dark:bg-slate-800 md:relative absolute inset-0 md:inset-auto z-10 md:z-auto transition-transform duration-300 ${selectedCustomer ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
             {selectedCustomer ? (
                 <>
-                    <div className="p-8 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30">
+                    <div className="p-6 md:p-8 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30">
                         <div className="flex justify-between items-start">
                             <div>
-                                <button className="md:hidden text-blue-600 dark:text-blue-400 mb-2 text-sm font-medium flex items-center" onClick={() => setSelectedCustomer(null)}>
-                                    <span className="mr-1">←</span> Back to List
+                                <button className="md:hidden text-slate-500 hover:text-slate-800 dark:text-slate-400 mb-4 flex items-center font-bold text-sm" onClick={() => setSelectedCustomer(null)}>
+                                    <Icons.ChevronUp /> <span className="rotate-90 ml-1">Back</span>
                                 </button>
-                                <h2 className="text-3xl font-bold text-slate-900 dark:text-white">{selectedCustomer.name}</h2>
-                                <div className="flex space-x-4 mt-2 text-slate-500 dark:text-slate-400 text-sm">
+                                <h2 className="text-3xl font-black text-slate-900 dark:text-white">{selectedCustomer.name}</h2>
+                                <div className="flex flex-col md:flex-row md:space-x-4 mt-2 text-slate-500 dark:text-slate-400 text-sm">
                                     <span>{selectedCustomer.email}</span>
-                                    <span>•</span>
+                                    <span className="hidden md:inline">•</span>
                                     <span>{selectedCustomer.phone}</span>
                                 </div>
                             </div>
-                            <div className="text-right">
-                                <p className="text-sm text-slate-500 dark:text-slate-400 uppercase tracking-wide font-bold">Credit Balance</p>
-                                <p className={`text-4xl font-bold ${selectedCustomer.balance > 0 ? 'text-red-500 dark:text-red-400' : 'text-emerald-500 dark:text-emerald-400'}`}>
+                            <div className="text-right bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
+                                <p className="text-xs text-slate-400 uppercase tracking-wide font-bold mb-1">Current Balance</p>
+                                <p className={`text-3xl font-black ${selectedCustomer.balance > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
                                     ₹{selectedCustomer.balance.toFixed(2)}
                                 </p>
                             </div>
                         </div>
                         {/* Action Buttons */}
-                        <div className="flex gap-4 mt-6">
+                        <div className="flex gap-4 mt-8">
                             <button 
                                 onClick={() => setShowActionModal('settle')}
-                                className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold shadow-md shadow-green-100 dark:shadow-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold shadow-lg shadow-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none transition-all active:scale-[0.98]"
                                 disabled={selectedCustomer.balance <= 0}
                             >
-                                Settle Debt (Pay)
+                                Pay Debt
                             </button>
                             <button 
                                 onClick={() => setShowActionModal('adjust')}
-                                className="flex-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-600 py-2 rounded-lg font-bold transition-colors"
+                                className="flex-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-600 py-3 rounded-xl font-bold transition-all active:scale-[0.98]"
                             >
-                                Add Credit (Lend)
+                                Lend (Add Credit)
                             </button>
                         </div>
                     </div>
                     
-                    <div className="flex-1 overflow-y-auto p-8">
-                        <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">Transaction History</h3>
-                        <p className="text-xs text-slate-500 mb-4">Click on a transaction to view items.</p>
+                    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-white dark:bg-slate-800">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-6">History</h3>
                         <div className="space-y-4">
                             {getCustomerTransactions(selectedCustomer.id).length === 0 ? (
-                                <p className="text-slate-400 italic">No transactions found.</p>
+                                <p className="text-slate-400 italic text-center py-10">No transaction history.</p>
                             ) : (
                                 getCustomerTransactions(selectedCustomer.id).reverse().map(t => (
                                     <div 
                                         key={t.id} 
                                         onClick={() => setViewingTransaction(t)}
-                                        className="bg-white dark:bg-slate-700/50 border border-slate-200 dark:border-slate-700 p-4 rounded-lg flex justify-between items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
+                                        className="bg-white dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700/50 p-4 rounded-xl flex justify-between items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
                                     >
-                                        <div>
-                                            <p className="font-medium text-slate-800 dark:text-white">
-                                                {t.type === 'payment' ? 'Debt Payment' : (t.items[0]?.name === 'Manual Credit Added' ? 'Manual Credit Addition' : 'Purchase')}
-                                                {t.paymentMethod === 'account' && <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded">Credit Tab</span>}
-                                            </p>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                                                {new Date(t.date).toLocaleDateString()} at {new Date(t.date).toLocaleTimeString()} • {t.items.length} Items
-                                            </p>
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${t.type === 'payment' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                                                {t.type === 'payment' ? '₹' : <Icons.Cart />}
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-slate-800 dark:text-white">
+                                                    {t.type === 'payment' ? 'Debt Payment' : (t.items[0]?.name === 'Manual Credit Added' ? 'Credit Adjustment' : 'Purchase')}
+                                                </p>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                    {new Date(t.date).toLocaleDateString()} • {new Date(t.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className={`font-bold ${t.type === 'payment' ? 'text-green-600 dark:text-green-400' : 'text-slate-800 dark:text-white'}`}>
-                                                {t.type === 'payment' ? '-' : ''}₹{t.total.toFixed(2)}
+                                        <div className="text-right">
+                                            <span className={`block font-bold text-lg ${t.type === 'payment' ? 'text-green-600' : 'text-slate-800 dark:text-white'}`}>
+                                                {t.type === 'payment' ? '-' : ''}₹{t.total.toFixed(0)}
                                             </span>
-                                            <span className="text-slate-400"><Icons.ChevronDown /></span>
+                                            {t.paymentMethod === 'account' && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">CREDIT</span>}
                                         </div>
                                     </div>
                                 ))
@@ -226,139 +231,80 @@ export const Customers: React.FC = () => {
                     </div>
                 </>
             ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
-                    <Icons.Users />
-                    <p className="mt-2">Select a customer to view details</p>
+                <div className="hidden md:flex flex-col items-center justify-center h-full text-slate-400">
+                    <div className="w-20 h-20 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                        <Icons.Users />
+                    </div>
+                    <p className="font-medium">Select a customer to view details</p>
                 </div>
             )}
         </div>
       </div>
 
-      {/* Add Customer Modal */}
+      {/* Modals (Add Customer, Actions) - styling updated similarly in actual implementation */}
       {showModal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-96 border border-slate-200 dark:border-slate-700">
-                <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-4">New Customer</h3>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+             <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-6 w-full max-w-md">
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-6">New Customer</h3>
                 <form onSubmit={handleAddCustomer} className="space-y-4">
                     <input 
                         type="text" required placeholder="Full Name" 
-                        className="w-full border border-slate-300 dark:border-slate-600 rounded p-2 bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
                         value={newCustomer.name} onChange={e => setNewCustomer({...newCustomer, name: e.target.value})}
                     />
                     <input 
-                        type="email" required placeholder="Email" 
-                        className="w-full border border-slate-300 dark:border-slate-600 rounded p-2 bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                        type="email" placeholder="Email" 
+                        className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
                         value={newCustomer.email} onChange={e => setNewCustomer({...newCustomer, email: e.target.value})}
                     />
                     <input 
                         type="tel" placeholder="Phone Number" 
-                        className="w-full border border-slate-300 dark:border-slate-600 rounded p-2 bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
                         value={newCustomer.phone} onChange={e => setNewCustomer({...newCustomer, phone: e.target.value})}
                     />
-                    <div className="flex space-x-2 pt-2">
-                        <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-2 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded transition-colors">Cancel</button>
-                        <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">Save</button>
+                    <div className="flex gap-3 pt-2">
+                        <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-100 rounded-xl font-bold">Cancel</button>
+                        <button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700">Save Profile</button>
                     </div>
                 </form>
              </div>
         </div>
       )}
-
-      {/* Transaction Action Modal */}
+      
+      {/* Action Modal */}
       {showActionModal && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-80 border border-slate-200 dark:border-slate-700">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-8 w-full max-w-sm">
                 <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">
                     {showActionModal === 'settle' ? 'Receive Payment' : 'Add Credit (Lend)'}
                 </h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                <p className="text-sm text-slate-500 mb-6">
                     {showActionModal === 'settle' 
-                        ? `Enter amount paid by ${selectedCustomer?.name}.` 
-                        : `Enter credit amount to add to ${selectedCustomer?.name}'s balance.`}
+                        ? `How much is ${selectedCustomer?.name} paying back?` 
+                        : `How much credit are you giving ${selectedCustomer?.name}?`}
                 </p>
                 
-                <div className="relative mb-4">
-                    <span className="absolute left-3 top-2 text-slate-400 font-bold">₹</span>
+                <div className="relative mb-8">
+                    <span className="absolute left-4 top-3 text-slate-400 font-bold text-xl">₹</span>
                     <input 
                         type="number" autoFocus
-                        className="w-full pl-8 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded text-lg font-bold outline-none focus:border-blue-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
-                        placeholder="0.00"
+                        className="w-full pl-10 pr-4 py-3 border-2 border-slate-200 dark:border-slate-600 rounded-xl text-3xl font-black outline-none focus:border-blue-500 bg-transparent text-slate-900 dark:text-white"
+                        placeholder="0"
                         value={amountInput}
                         onChange={e => setAmountInput(e.target.value)}
                     />
                 </div>
 
-                <div className="flex gap-2">
-                    <button onClick={() => setShowActionModal(null)} className="flex-1 py-2 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded transition-colors">Cancel</button>
+                <div className="grid grid-cols-2 gap-3">
+                    <button onClick={() => setShowActionModal(null)} className="py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl">Cancel</button>
                     <button 
                         onClick={handleTransaction}
-                        className={`flex-1 py-2 text-white rounded font-bold ${showActionModal === 'settle' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        className={`py-3 text-white rounded-xl font-bold shadow-lg ${showActionModal === 'settle' ? 'bg-green-600 shadow-green-500/20' : 'bg-blue-600 shadow-blue-500/20'}`}
                     >
                         Confirm
                     </button>
                 </div>
             </div>
-          </div>
-      )}
-
-      {/* View Transaction Items Modal */}
-      {viewingTransaction && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
-                  <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
-                      <div>
-                          <h3 className="text-lg font-bold text-slate-800 dark:text-white">Transaction Details</h3>
-                          <p className="text-xs text-slate-500">#{viewingTransaction.id.slice(0, 8)} • {new Date(viewingTransaction.date).toLocaleDateString()}</p>
-                      </div>
-                      <button onClick={() => setViewingTransaction(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icons.X /></button>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                      {/* Items List */}
-                      <div>
-                          <p className="text-xs font-bold text-slate-500 uppercase mb-2">Items Purchased</p>
-                          <div className="space-y-2">
-                              {viewingTransaction.items.length === 0 ? <p className="text-sm text-slate-400">No items (Payment Record)</p> : 
-                                viewingTransaction.items.map((item, idx) => (
-                                  <div key={idx} className="flex justify-between items-center text-sm border-b border-slate-50 dark:border-slate-700/50 pb-2 last:border-0">
-                                      <div>
-                                          <p className="font-semibold text-slate-800 dark:text-slate-200">{item.name}</p>
-                                          <p className="text-xs text-slate-500">{item.variant} {item.quantity > 1 && `x${item.quantity}`}</p>
-                                      </div>
-                                      <div className="text-right">
-                                          <p className="font-medium text-slate-800 dark:text-white">₹{(item.price * item.quantity).toFixed(2)}</p>
-                                          {item.quantity > 1 && <p className="text-xs text-slate-400">@{item.price}</p>}
-                                      </div>
-                                  </div>
-                              ))}
-                          </div>
-                      </div>
-
-                      {/* Summary */}
-                      <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg text-sm space-y-1">
-                          <div className="flex justify-between text-slate-500">
-                              <span>Subtotal</span>
-                              <span>₹{viewingTransaction.subtotal.toFixed(2)}</span>
-                          </div>
-                          {viewingTransaction.charges.map((c, i) => (
-                              <div key={i} className="flex justify-between">
-                                  <span className="text-slate-500">{c.name}</span>
-                                  <span className={c.isDiscount ? 'text-green-600' : 'text-slate-600 dark:text-slate-300'}>
-                                      {c.isDiscount ? '-' : ''}₹{c.amount.toFixed(2)}
-                                  </span>
-                              </div>
-                          ))}
-                          <div className="flex justify-between font-bold text-lg text-slate-800 dark:text-white pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
-                              <span>Total</span>
-                              <span>₹{viewingTransaction.total.toFixed(2)}</span>
-                          </div>
-                      </div>
-                      
-                      <div className="text-xs text-center text-slate-400">
-                          Payment Method: <span className="uppercase font-bold">{viewingTransaction.paymentMethod}</span>
-                      </div>
-                  </div>
-              </div>
           </div>
       )}
     </div>

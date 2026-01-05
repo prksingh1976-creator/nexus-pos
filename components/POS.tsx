@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useShop } from '../contexts/ShopContext';
 import { Product, CartItem, Customer, AppliedCharge, Transaction } from '../types';
 import { Icons, getCategoryIcon } from '../constants';
@@ -6,6 +7,9 @@ import QRCode from 'qrcode';
 
 export const POS: React.FC = () => {
   const { products, customers, processTransaction, categories, user, chargeRules } = useShop();
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,16 +20,37 @@ export const POS: React.FC = () => {
   // Checkout States
   const [checkoutStep, setCheckoutStep] = useState<'method' | 'upi_scan'>('method');
   const [upiQrCode, setUpiQrCode] = useState<string | null>(null);
+  const [queueName, setQueueName] = useState('');
 
   // Receipt Modal State
   const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
 
-  // Per-Transaction Charge Toggles (Set of disabled Rule IDs for this session)
+  // Per-Transaction Charge Toggles
   const [disabledChargeIds, setDisabledChargeIds] = useState<Set<string>>(new Set());
-
-  // Custom Ad-Hoc Charges (One-time use)
   const [customCharges, setCustomCharges] = useState<{ id: string, name: string, amount: number, isDiscount: boolean }[]>([]);
+
+  // Load Order from Navigation (Edit Mode)
+  useEffect(() => {
+    if (location.state && location.state.cart) {
+        setCart(location.state.cart);
+        if (location.state.customerId) {
+            const customer = customers.find(c => c.id === location.state.customerId);
+            if (customer) setSelectedCustomer(customer);
+        }
+        if (location.state.queueName) {
+            setQueueName(location.state.queueName);
+        }
+        navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location, customers, navigate]);
+
+  // Sync Queue Name with Customer
+  useEffect(() => {
+    if (selectedCustomer) {
+        setQueueName(selectedCustomer.name);
+    }
+  }, [selectedCustomer]);
 
   // Filtering Logic
   const filteredProducts = useMemo(() => {
@@ -59,10 +84,6 @@ export const POS: React.FC = () => {
     });
   };
 
-  const removeFromCart = (id: string) => {
-    setCart(prev => prev.filter(item => item.id !== id));
-  };
-
   const updateQuantity = (id: string, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.id === id) {
@@ -78,7 +99,6 @@ export const POS: React.FC = () => {
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Dynamic Charge Calculation
   const appliedCharges: AppliedCharge[] = useMemo(() => {
       if (cartSubtotal === 0) return [];
 
@@ -104,13 +124,7 @@ export const POS: React.FC = () => {
             };
         });
 
-      const customs = customCharges.map(c => ({
-          name: c.name,
-          amount: c.amount,
-          isDiscount: c.isDiscount
-      }));
-
-      return [...rules, ...customs];
+      return [...rules, ...customCharges];
   }, [cartSubtotal, chargeRules, selectedCustomer, disabledChargeIds, customCharges]);
 
   const finalTotal = useMemo(() => {
@@ -121,26 +135,10 @@ export const POS: React.FC = () => {
   const toggleCharge = (ruleId: string) => {
       setDisabledChargeIds(prev => {
           const next = new Set(prev);
-          if (next.has(ruleId)) {
-              next.delete(ruleId);
-          } else {
-              next.add(ruleId);
-          }
+          if (next.has(ruleId)) next.delete(ruleId);
+          else next.add(ruleId);
           return next;
       });
-  };
-
-  // Custom Charge Handlers
-  const addCustomCharge = () => {
-      setCustomCharges(prev => [...prev, { id: crypto.randomUUID(), name: 'Extra Charge', amount: 0, isDiscount: false }]);
-  };
-
-  const updateCustomCharge = (id: string, field: keyof typeof customCharges[0], value: any) => {
-      setCustomCharges(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
-  };
-
-  const removeCustomCharge = (id: string) => {
-      setCustomCharges(prev => prev.filter(c => c.id !== id));
   };
 
   const generateUpiQr = async () => {
@@ -149,11 +147,9 @@ export const POS: React.FC = () => {
           alert("UPI ID not configured. Please add it in Account Settings.");
           return;
       }
-
       const name = encodeURIComponent(user?.name || 'Nexus Shop');
       const amount = finalTotal.toFixed(2);
       const upiUrl = `upi://pay?pa=${upiId}&pn=${name}&am=${amount}&cu=INR`; 
-      
       try {
           const qrDataUrl = await QRCode.toDataURL(upiUrl, { width: 300 });
           setUpiQrCode(qrDataUrl);
@@ -164,12 +160,11 @@ export const POS: React.FC = () => {
       }
   };
 
-  const handleCompleteTransaction = (method: 'cash' | 'account' | 'upi', status: 'completed' | 'queued') => {
+  const handleCompleteTransaction = (method: 'cash' | 'account' | 'upi' | 'pending', status: 'completed' | 'queued') => {
     if (method === 'account' && !selectedCustomer) {
       alert("Please select a customer for account credit.");
       return;
     }
-
     const transaction: Transaction = {
       id: crypto.randomUUID(),
       customerId: selectedCustomer ? selectedCustomer.id : null,
@@ -181,44 +176,51 @@ export const POS: React.FC = () => {
       total: finalTotal,
       type: 'sale',
       paymentMethod: method,
-      status: status
+      status: status,
+      queueName: queueName || undefined
     };
-
     processTransaction(transaction);
-
-    // Show Receipt
     setLastTransaction(transaction);
-    setShowReceipt(true);
-
-    // Reset
+    
+    // Cleanup
     setCart([]);
     setSelectedCustomer(null);
     setShowCheckoutModal(false);
     setCheckoutStep('method');
     setShowCartMobile(false);
-    setDisabledChargeIds(new Set()); // Reset toggle state
-    setCustomCharges([]); // Reset custom charges
+    setDisabledChargeIds(new Set());
+    setCustomCharges([]);
+    setQueueName('');
+    
+    if (status === 'completed') {
+        setShowReceipt(true);
+    } else {
+        alert("Order put on hold (Queued). Check Orders tab.");
+    }
   };
 
   return (
-    <div className="flex h-full relative flex-col md:flex-row">
+    <div className="flex h-[calc(100vh-3.5rem)] md:h-screen flex-col md:flex-row overflow-hidden">
       {/* Left: Products Grid */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden w-full">
+      <div className="flex-1 flex flex-col h-full overflow-hidden w-full bg-slate-50 dark:bg-slate-900">
         {/* Header Filters */}
-        <div className="p-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm z-10 transition-colors">
-            <div className="flex space-x-4 mb-4">
-                <input 
-                    type="text" 
-                    placeholder="Search products..." 
-                    className="flex-1 bg-slate-100 dark:bg-slate-700 border-none rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
+        <div className="p-3 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm z-10">
+            <div className="flex space-x-2 mb-2">
+                <div className="relative flex-1">
+                    <span className="absolute left-3 top-2.5 text-slate-400"><Icons.Sparkles /></span>
+                    <input 
+                        type="text" 
+                        placeholder="Search products..." 
+                        className="w-full bg-slate-100 dark:bg-slate-700 border-none rounded-xl pl-9 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 transition-all text-sm"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
             </div>
-            <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
+            <div className="flex space-x-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1">
                 <button 
                     onClick={() => setSelectedCategory('All')}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${selectedCategory === 'All' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all shadow-sm border ${selectedCategory === 'All' ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-slate-300'}`}
                 >
                     All Items
                 </button>
@@ -226,7 +228,7 @@ export const POS: React.FC = () => {
                     <button 
                         key={cat}
                         onClick={() => setSelectedCategory(cat)}
-                        className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${selectedCategory === cat ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all shadow-sm border ${selectedCategory === cat ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-slate-300'}`}
                     >
                         {cat}
                     </button>
@@ -235,59 +237,93 @@ export const POS: React.FC = () => {
         </div>
 
         {/* Product Grid */}
-        <div className="flex-1 overflow-y-auto p-4 bg-slate-50 dark:bg-slate-900 transition-colors">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-20 md:pb-4">
+        <div className="flex-1 overflow-y-auto p-3 md:p-4 pb-20 md:pb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                 {Object.keys(groupedProducts).map(productName => {
                     const group = groupedProducts[productName];
                     const firstItem = group[0];
-                    const hasMultipleVariants = group.length > 1 || !!firstItem.variant;
+                    // Strict check: Multiple variants only if more than 1 item in group
+                    const hasMultipleVariants = group.length > 1;
+                    const isOutOfStock = !hasMultipleVariants && firstItem.stock <= 0;
 
                     return (
                         <div 
                             key={productName} 
-                            onClick={() => !hasMultipleVariants ? addToCart(firstItem) : null}
-                            className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 transition-all hover:shadow-md flex flex-col overflow-hidden ${!hasMultipleVariants && firstItem.stock === 0 ? 'opacity-50 grayscale pointer-events-none' : ''} ${!hasMultipleVariants ? 'cursor-pointer active:scale-95' : ''}`}
+                            onClick={() => !hasMultipleVariants && !isOutOfStock ? addToCart(firstItem) : null}
+                            className={`
+                                bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 
+                                transition-all flex flex-col overflow-hidden relative group 
+                                ${!hasMultipleVariants 
+                                    ? isOutOfStock 
+                                        ? 'opacity-60 grayscale cursor-not-allowed'
+                                        : 'cursor-pointer hover:shadow-lg hover:-translate-y-1 hover:border-blue-400 dark:hover:border-blue-500 active:scale-[0.98]' 
+                                    : 'cursor-default'
+                                }
+                            `}
                         >
-                            {/* Card Header (Category Icon Only) */}
-                            <div className="p-4 flex items-center gap-3 border-b border-slate-100 dark:border-slate-700/50">
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/20`}>
-                                    {getCategoryIcon(firstItem.category)}
+                            {/* Card Header (Category Icon) */}
+                            <div className={`p-3 flex flex-col items-center justify-center flex-1 min-h-[110px] relative ${!hasMultipleVariants ? 'pointer-events-none' : ''}`}>
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white bg-gradient-to-br from-blue-500 to-indigo-600 shadow-md mb-2 ${!hasMultipleVariants ? 'group-hover:scale-110' : ''} transition-transform duration-300`}>
+                                    <div className="scale-90">{getCategoryIcon(firstItem.category)}</div>
                                 </div>
-                                <div>
-                                    <h4 className="font-bold text-slate-800 dark:text-slate-200 text-base leading-tight line-clamp-2">{productName}</h4>
-                                    <p className="text-xs text-slate-400 mt-0.5">{firstItem.seller}</p>
+                                <h4 className="font-bold text-slate-800 dark:text-slate-100 text-center leading-tight line-clamp-2 px-1 text-xs md:text-sm">
+                                    {productName}
+                                </h4>
+                                {!hasMultipleVariants && firstItem.variant && (
+                                    <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 px-2 py-0.5 bg-slate-100 dark:bg-slate-700 rounded-md">
+                                        {firstItem.variant}
+                                    </p>
+                                )}
+                                <p className="text-[9px] text-slate-400 mt-1 uppercase tracking-wide">{firstItem.seller}</p>
+                                
+                                {/* Stock Badge */}
+                                <div className="absolute top-2 right-2">
+                                     {!hasMultipleVariants && (
+                                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm ${firstItem.stock > 5 ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                                             {firstItem.stock}
+                                         </span>
+                                     )}
+                                     {hasMultipleVariants && (
+                                         <span className="bg-slate-100 dark:bg-slate-700 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600">
+                                             {group.length} Vars
+                                         </span>
+                                     )}
                                 </div>
                             </div>
 
-                            {/* Card Body: Variants or Single Price */}
-                            <div className="p-4 pt-3 flex-1 flex flex-col justify-end">
+                            {/* Card Footer: Variants or Price */}
+                            <div className={`border-t border-slate-100 dark:border-slate-700 ${!hasMultipleVariants ? 'bg-slate-50 dark:bg-slate-900/50' : 'bg-white dark:bg-slate-800'}`}>
                                 {hasMultipleVariants ? (
-                                    <div className="space-y-2 w-full">
-                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Select Size</p>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {group.sort((a,b) => a.price - b.price).map(variant => (
-                                                <button
-                                                    key={variant.id}
-                                                    onClick={(e) => { e.stopPropagation(); addToCart(variant); }}
-                                                    disabled={variant.stock === 0}
-                                                    className={`py-2 px-1 text-xs font-bold rounded border transition-colors ${
-                                                        variant.stock === 0 
-                                                        ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 border-transparent cursor-not-allowed' 
-                                                        : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300 border-blue-100 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40'
-                                                    }`}
-                                                >
-                                                    <span className="block truncate">{variant.variant || 'Standard'}</span>
-                                                    <span className="block">₹{variant.price}</span>
-                                                </button>
-                                            ))}
-                                        </div>
+                                    <div className="p-1.5 grid grid-cols-2 gap-1.5 bg-slate-50 dark:bg-slate-900/30">
+                                        {group.sort((a,b) => a.price - b.price).map(variant => (
+                                            <button
+                                                key={variant.id}
+                                                onClick={(e) => { e.stopPropagation(); addToCart(variant); }}
+                                                disabled={variant.stock <= 0}
+                                                className={`py-1.5 px-1 flex flex-col items-center justify-center rounded-lg border transition-all text-center relative overflow-hidden active:scale-95 ${
+                                                    variant.stock <= 0 
+                                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-transparent cursor-not-allowed' 
+                                                    : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:border-blue-500 hover:text-blue-600 hover:shadow-sm'
+                                                }`}
+                                            >
+                                                <div className="text-[10px] font-bold truncate max-w-full leading-none mb-0.5">{variant.variant || 'Std'}</div>
+                                                <div className="text-[10px] text-slate-500 dark:text-slate-400 leading-none">₹{variant.price}</div>
+                                                {variant.stock <= 5 && variant.stock > 0 && <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-red-500 rounded-full"></div>}
+                                            </button>
+                                        ))}
                                     </div>
                                 ) : (
-                                    <div className="flex justify-between items-center w-full mt-2">
-                                        <span className="font-bold text-blue-600 text-xl">₹{firstItem.price.toFixed(2)}</span>
-                                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${firstItem.stock > 0 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-700'}`}>
-                                            {firstItem.stock > 0 ? `${firstItem.stock} Left` : 'Out of Stock'}
-                                        </span>
+                                    <div className={`p-2 flex justify-center items-center h-10 ${isOutOfStock ? 'bg-slate-100 dark:bg-slate-800' : 'group-hover:bg-blue-500 dark:group-hover:bg-blue-600 transition-colors duration-300'}`}>
+                                        {isOutOfStock ? (
+                                            <span className="text-xs font-bold text-slate-400">Sold Out</span>
+                                        ) : (
+                                            <div className="flex items-center gap-1 group-hover:text-white transition-colors">
+                                                <span className="text-xs font-medium text-slate-400 group-hover:text-blue-100 dark:text-slate-500">Add</span>
+                                                <span className="text-sm font-black text-slate-800 dark:text-white group-hover:text-white">
+                                                    ₹{firstItem.price}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -298,41 +334,51 @@ export const POS: React.FC = () => {
         </div>
       </div>
 
-      {/* Mobile Cart Toggle Button */}
+      {/* Mobile Floating Cart Button */}
       {cart.length > 0 && (
-        <button 
-          onClick={() => setShowCartMobile(true)}
-          className="md:hidden fixed bottom-4 right-4 left-4 bg-blue-600 text-white p-4 rounded-xl shadow-xl flex justify-between items-center z-20 font-bold"
-        >
-          <div className="flex items-center space-x-2">
-            <span className="bg-white/20 px-2 py-1 rounded text-sm">{totalItems}</span>
-            <span>View Order</span>
-          </div>
-          <span>₹{finalTotal.toFixed(2)}</span>
-        </button>
+        <div className="md:hidden fixed bottom-4 left-4 right-4 z-40">
+            <button 
+            onClick={() => setShowCartMobile(true)}
+            className="w-full bg-slate-900 text-white p-3 rounded-xl shadow-2xl flex justify-between items-center active:scale-95 transition-transform"
+            >
+            <div className="flex items-center space-x-3">
+                <div className="bg-blue-600 px-2 py-1 rounded text-xs font-bold">{totalItems}</div>
+                <span className="font-semibold text-sm">View Cart</span>
+            </div>
+            <span className="font-bold text-base">₹{finalTotal.toFixed(2)}</span>
+            </button>
+        </div>
       )}
 
-      {/* Right: Cart (Responsive) */}
-      <div className={`
-         fixed inset-0 z-30 bg-white dark:bg-slate-800 md:static md:w-96 md:border-l md:border-slate-200 dark:md:border-slate-700 flex flex-col h-full shadow-xl transition-all duration-300 transform
+      {/* Right: Cart (Responsive Drawer on Mobile) */}
+      <div 
+        className={`
+         fixed inset-x-0 bottom-0 z-50 bg-white dark:bg-slate-900 md:static md:w-96 md:border-l md:border-slate-200 dark:md:border-slate-800 flex flex-col md:h-full shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.3)] md:shadow-none transition-transform duration-300 ease-out rounded-t-3xl md:rounded-none
          ${showCartMobile ? 'translate-y-0' : 'translate-y-full md:translate-y-0'}
-      `}>
-        {/* Mobile Cart Header Close */}
-        <div className="md:hidden p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900">
-            <h2 className="font-bold text-lg text-slate-800 dark:text-white">Current Order</h2>
-            <button onClick={() => setShowCartMobile(false)} className="p-2 bg-white dark:bg-slate-700 rounded-full text-slate-500 shadow-sm"><Icons.X /></button>
+         h-[80vh] md:h-auto
+      `}
+      >
+        {/* Mobile Drag Handle / Close */}
+        <div className="md:hidden flex justify-center pt-3 pb-1" onClick={() => setShowCartMobile(false)}>
+            <div className="w-12 h-1 bg-slate-300 dark:bg-slate-600 rounded-full"></div>
         </div>
 
-        <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hidden md:block transition-colors">
-            <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center">
-                <span className="mr-2"><Icons.Cart /></span> Current Order
-            </h2>
-        </div>
+        {/* Header */}
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 md:bg-slate-50/50 dark:md:bg-slate-800/50 backdrop-blur-sm z-10 rounded-t-3xl md:rounded-none">
+             <div className="flex justify-between items-center mb-3">
+                 <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                     <Icons.Cart /> Current Order
+                 </h2>
+                 {cart.length > 0 && (
+                     <button onClick={() => setCart([])} className="text-[10px] font-bold text-red-500 hover:text-red-600 bg-red-50 px-2 py-1 rounded-md">
+                         Clear
+                     </button>
+                 )}
+             </div>
 
-        <div className="p-4 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 transition-colors">
-            {/* Customer Selector */}
+             {/* Customer Selector */}
              <select 
-                className="w-full p-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm outline-none focus:border-blue-500 text-slate-700 dark:text-white"
+                className="w-full p-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 dark:text-white font-medium appearance-none cursor-pointer"
                 value={selectedCustomer?.id || ''}
                 onChange={(e) => setSelectedCustomer(customers.find(c => c.id === e.target.value) || null)}
             >
@@ -343,54 +389,55 @@ export const POS: React.FC = () => {
             </select>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* Cart Items List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-white dark:bg-slate-900">
             {cart.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500">
-                    <Icons.Cart />
-                    <p className="mt-2 text-sm font-medium">Cart is empty</p>
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-600 space-y-2">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-full">
+                        <Icons.Cart />
+                    </div>
+                    <p className="font-medium text-sm">Start adding products</p>
                 </div>
             ) : (
                 cart.map(item => (
-                    <div key={item.id} className="flex justify-between items-center group">
-                        <div className="flex-1">
-                            <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                    <div key={item.id} className="flex justify-between items-center p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                        <div className="flex-1 min-w-0 pr-3">
+                            <p className="text-sm font-bold text-slate-800 dark:text-white truncate">
                                 {item.name} 
-                                {item.variant && <span className="text-slate-500 dark:text-slate-400 ml-1 font-normal">({item.variant})</span>}
                             </p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">₹{item.price.toFixed(2)} x {item.quantity}</p>
+                            <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                {item.variant && <span className="bg-slate-200 dark:bg-slate-700 px-1 rounded">{item.variant}</span>}
+                                <span>₹{item.price.toFixed(2)}</span>
+                            </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                             <button onClick={() => updateQuantity(item.id, -1)} className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 flex items-center justify-center text-slate-700 dark:text-slate-300 font-bold">-</button>
-                             <span className="text-sm w-4 text-center font-medium text-slate-800 dark:text-white">{item.quantity}</span>
-                             <button onClick={() => updateQuantity(item.id, 1)} className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 flex items-center justify-center text-slate-700 dark:text-slate-300 font-bold">+</button>
-                             <button onClick={() => removeFromCart(item.id)} className="text-red-400 hover:text-red-600 ml-2 md:opacity-0 group-hover:opacity-100 transition-opacity p-1">
-                                <Icons.Trash />
-                             </button>
-                        </div>
-                        <div className="ml-4 w-16 text-right font-bold text-slate-800 dark:text-white">
-                            ₹{(item.price * item.quantity).toFixed(2)}
+                        <div className="flex items-center gap-2">
+                             <div className="flex items-center bg-white dark:bg-slate-700 rounded-lg shadow-sm border border-slate-200 dark:border-slate-600 h-7">
+                                <button onClick={() => updateQuantity(item.id, -1)} className="w-7 h-full flex items-center justify-center text-slate-500 hover:text-blue-600 active:bg-slate-100 rounded-l-lg">-</button>
+                                <span className="text-xs font-bold w-5 text-center text-slate-800 dark:text-white">{item.quantity}</span>
+                                <button onClick={() => updateQuantity(item.id, 1)} className="w-7 h-full flex items-center justify-center text-slate-500 hover:text-blue-600 active:bg-slate-100 rounded-r-lg">+</button>
+                             </div>
+                             <div className="text-right w-14">
+                                <div className="font-bold text-slate-800 dark:text-white text-sm">₹{(item.price * item.quantity).toFixed(0)}</div>
+                             </div>
                         </div>
                     </div>
                 ))
             )}
         </div>
 
-        {/* Cart Footer: Breakdown */}
-        <div className="p-6 bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 pb-8 md:pb-6 transition-colors">
-            
-            {/* Charge breakdown and toggles */}
+        {/* Cart Footer */}
+        <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 pb-6 md:pb-4 shadow-[0_-5px_20px_-5px_rgba(0,0,0,0.05)] z-10">
             {cart.length > 0 && (
-                <div className="mb-4 space-y-1">
-                    <div className="flex justify-between text-sm text-slate-500 dark:text-slate-400">
+                <div className="mb-3 space-y-1">
+                    <div className="flex justify-between text-xs text-slate-500">
                         <span>Subtotal</span>
                         <span>₹{cartSubtotal.toFixed(2)}</span>
                     </div>
-                    {/* Active Charges List (Automated) */}
+                    {/* Active Charges List */}
                     {chargeRules.filter(r => r.enabled).map(rule => {
                         const isApplies = (rule.trigger === 'always') ||
                                           (rule.trigger === 'amount_threshold' && cartSubtotal > (rule.threshold || 0)) ||
                                           (rule.trigger === 'customer_assigned' && !!selectedCustomer);
-                        
                         if (!isApplies) return null;
 
                         const isDisabled = disabledChargeIds.has(rule.id);
@@ -398,140 +445,118 @@ export const POS: React.FC = () => {
                         const displayAmount = isDisabled ? 0 : amount;
 
                         return (
-                             <div key={rule.id} className="flex justify-between items-center text-sm group">
+                             <div key={rule.id} className="flex justify-between items-center text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 p-0.5 rounded" onClick={() => toggleCharge(rule.id)}>
                                 <div className="flex items-center space-x-2">
-                                    <button 
-                                        onClick={() => toggleCharge(rule.id)}
-                                        className={`w-4 h-4 rounded border flex items-center justify-center ${isDisabled ? 'border-slate-300' : 'bg-blue-600 border-blue-600'}`}
-                                    >
-                                        {!isDisabled && <span className="text-white text-[10px]">✓</span>}
-                                    </button>
-                                    <span className={`${isDisabled ? 'text-slate-400 line-through' : rule.isDiscount ? 'text-green-600' : 'text-slate-600 dark:text-slate-300'}`}>
+                                    <div className={`w-3 h-3 rounded border flex items-center justify-center transition-colors ${isDisabled ? 'border-slate-300' : 'bg-blue-600 border-blue-600'}`}>
+                                        {!isDisabled && <span className="text-white text-[8px]">✓</span>}
+                                    </div>
+                                    <span className={`${isDisabled ? 'text-slate-400 line-through' : 'text-slate-600 dark:text-slate-300'}`}>
                                         {rule.name}
                                     </span>
                                 </div>
-                                <span className={`${isDisabled ? 'text-slate-400 line-through' : rule.isDiscount ? 'text-green-600' : 'text-slate-600 dark:text-slate-300'}`}>
+                                <span className={`${isDisabled ? 'text-slate-400 line-through' : rule.isDiscount ? 'text-green-600' : 'text-slate-600'}`}>
                                     {rule.isDiscount ? '-' : ''}₹{displayAmount.toFixed(2)}
                                 </span>
                             </div>
                         );
                     })}
-
-                    {/* Custom Ad-Hoc Charges */}
-                    {customCharges.map((custom) => (
-                        <div key={custom.id} className="flex items-center gap-2 mt-1">
-                            <input 
-                                type="text"
-                                className="flex-1 min-w-0 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs text-slate-800 dark:text-white"
-                                value={custom.name}
-                                onChange={(e) => updateCustomCharge(custom.id, 'name', e.target.value)}
-                            />
-                            <div className="flex items-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded overflow-hidden">
-                                <button
-                                    onClick={() => updateCustomCharge(custom.id, 'isDiscount', !custom.isDiscount)}
-                                    className={`px-1.5 py-1 text-xs font-bold ${custom.isDiscount ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600 dark:bg-slate-600 dark:text-slate-300'}`}
-                                >
-                                    {custom.isDiscount ? '-' : '+'}
-                                </button>
-                                <input 
-                                    type="number"
-                                    className="w-16 px-1 py-1 text-xs text-right border-l border-slate-300 dark:border-slate-600 bg-transparent text-slate-800 dark:text-white outline-none"
-                                    value={custom.amount}
-                                    onChange={(e) => updateCustomCharge(custom.id, 'amount', Number(e.target.value))}
-                                    placeholder="0"
-                                />
-                            </div>
-                            <button 
-                                onClick={() => removeCustomCharge(custom.id)}
-                                className="text-slate-400 hover:text-red-500"
-                            >
-                                <Icons.X />
-                            </button>
-                        </div>
-                    ))}
-
-                    <button 
-                        onClick={addCustomCharge}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center mt-2"
-                    >
-                        <span className="mr-1 text-lg leading-none">+</span> Add Custom Charge
-                    </button>
                 </div>
             )}
 
-            <div className="flex justify-between items-center mb-6 pt-2 border-t border-slate-200 dark:border-slate-700">
-                <span className="text-slate-500 dark:text-slate-400 font-medium">Total</span>
-                <span className="text-3xl font-bold text-slate-900 dark:text-white">₹{finalTotal.toFixed(2)}</span>
+            <div className="flex justify-between items-center mb-3 pt-3 border-t border-dashed border-slate-300 dark:border-slate-700">
+                <span className="text-slate-500 font-bold text-sm">Total</span>
+                <span className="text-2xl font-black text-slate-900 dark:text-white">₹{finalTotal.toFixed(2)}</span>
             </div>
             <button 
                 onClick={() => setShowCheckoutModal(true)}
                 disabled={cart.length === 0}
-                className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none transition-all"
+                className="w-full py-3 bg-slate-900 text-white dark:bg-blue-600 rounded-xl font-bold text-base shadow-lg shadow-slate-900/20 disabled:opacity-50 disabled:shadow-none transition-all active:scale-[0.98]"
             >
                 Checkout
             </button>
         </div>
       </div>
 
+      {/* Mobile Cart Overlay */}
+      {showCartMobile && (
+        <div 
+            className="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm" 
+            onClick={() => setShowCartMobile(false)}
+        />
+      )}
+
       {/* Checkout Modal */}
       {showCheckoutModal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-md transform transition-all scale-100 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 md:p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-t-3xl md:rounded-3xl shadow-2xl p-5 w-full max-w-sm animate-fade-in max-h-[90vh] overflow-y-auto">
                 
                 {checkoutStep === 'method' && (
                   <>
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold text-slate-800 dark:text-white">Payment Method</h3>
-                        <button onClick={() => setShowCheckoutModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icons.X /></button>
+                    <div className="flex justify-between items-center mb-5">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-white">Payment Method</h3>
+                        <button onClick={() => setShowCheckoutModal(false)} className="p-1.5 bg-slate-100 dark:bg-slate-700 rounded-full text-slate-500"><Icons.X /></button>
                     </div>
                     
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                         <button 
                             onClick={() => handleCompleteTransaction('cash', 'completed')} 
-                            className="w-full py-4 border-2 border-slate-100 dark:border-slate-700 hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-xl flex items-center px-4 transition-all group"
+                            className="w-full p-3.5 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50 hover:bg-green-50 hover:border-green-200 dark:hover:border-green-900 rounded-xl flex items-center transition-all group active:scale-[0.98]"
                         >
-                            <div className="w-10 h-10 rounded-full bg-green-100 text-green-600 flex items-center justify-center font-bold mr-4 group-hover:scale-110 transition-transform text-lg">₹</div>
+                            <div className="w-10 h-10 rounded-lg bg-green-100 text-green-600 flex items-center justify-center font-bold mr-3 text-lg">₹</div>
                             <div className="text-left">
-                                <p className="font-bold text-slate-800 dark:text-white">Cash</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Accept cash from customer</p>
+                                <p className="font-bold text-slate-900 dark:text-white text-base">Cash</p>
+                                <p className="text-[10px] text-slate-500">Instant payment</p>
                             </div>
                         </button>
 
                         <button 
                             onClick={() => handleCompleteTransaction('account', 'completed')} 
                             disabled={!selectedCustomer}
-                            className="w-full py-4 border-2 border-slate-100 dark:border-slate-700 hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-xl flex items-center px-4 transition-all group disabled:opacity-50 disabled:hover:border-slate-100 disabled:hover:bg-transparent"
+                            className="w-full p-3.5 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50 hover:bg-purple-50 hover:border-purple-200 rounded-xl flex items-center transition-all group active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold mr-4 group-hover:scale-110 transition-transform">A</div>
+                            <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center font-bold mr-3 text-lg">A</div>
                             <div className="text-left">
-                                <p className="font-bold text-slate-800 dark:text-white">Store Credit / Tab</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">{selectedCustomer ? `Charge to ${selectedCustomer.name}` : 'Select customer first'}</p>
+                                <p className="font-bold text-slate-900 dark:text-white text-base">Store Credit</p>
+                                <p className="text-[10px] text-slate-500">{selectedCustomer ? `Tab: ${selectedCustomer.name}` : 'Select customer first'}</p>
                             </div>
                         </button>
 
-                        {/* UPI Option */}
-                        <div className="border-t border-slate-100 dark:border-slate-700 pt-3 mt-3">
-                             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">UPI Payment</label>
-                             <button 
-                                onClick={generateUpiQr}
-                                className="w-full py-3 bg-slate-800 dark:bg-slate-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
-                             >
-                                <Icons.QRCode /> Generate QR Code
-                             </button>
-                             {!user?.upiId && (
-                                <p className="text-xs text-red-400 mt-2 text-center">
-                                    Setup UPI ID in Account Settings first.
-                                </p>
-                             )}
+                        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-800/50 rounded-xl overflow-hidden">
+                            <button 
+                                onClick={() => handleCompleteTransaction('pending', 'queued')} 
+                                className="w-full p-3.5 flex items-center transition-all group active:scale-[0.98]"
+                            >
+                                <div className="w-10 h-10 rounded-lg bg-yellow-100 text-yellow-600 flex items-center justify-center font-bold mr-3 text-lg">
+                                    <Icons.Orders />
+                                </div>
+                                <div className="text-left">
+                                    <p className="font-bold text-slate-900 dark:text-white text-base">Hold / Queue Order</p>
+                                    <p className="text-[10px] text-slate-500">Save order for later</p>
+                                </div>
+                            </button>
+                            <div className="px-3.5 pb-3.5 pt-0">
+                                <input 
+                                    type="text" 
+                                    placeholder="Queue Name (e.g. Table 5)" 
+                                    className="w-full text-xs p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-yellow-500 text-slate-800 dark:text-slate-200 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-700"
+                                    value={queueName}
+                                    onChange={(e) => setQueueName(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    disabled={!!selectedCustomer}
+                                />
+                            </div>
                         </div>
-                    </div>
-                    
-                    <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700">
+
+                        <div className="relative py-1.5">
+                             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700"></div></div>
+                             <div className="relative flex justify-center"><span className="bg-white dark:bg-slate-800 px-2 text-[10px] text-slate-400 uppercase font-bold">Or</span></div>
+                        </div>
+
                         <button 
-                           onClick={() => handleCompleteTransaction('cash', 'queued')} 
-                           className="w-full py-3 text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded-xl font-bold transition-colors"
+                            onClick={generateUpiQr}
+                            className="w-full p-3.5 bg-slate-900 dark:bg-slate-950 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-[0.98] text-sm"
                         >
-                           Place Order as Queued (Pay Later)
+                            <Icons.QRCode /> Pay via UPI
                         </button>
                     </div>
                   </>
@@ -539,75 +564,66 @@ export const POS: React.FC = () => {
 
                 {checkoutStep === 'upi_scan' && (
                     <div className="text-center">
-                        <div className="flex justify-between items-center mb-4">
-                             <button onClick={() => setCheckoutStep('method')} className="text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">Back</button>
-                             <h3 className="text-xl font-bold text-slate-800 dark:text-white">Scan to Pay</h3>
+                        <div className="flex justify-between items-center mb-3">
+                             <button onClick={() => setCheckoutStep('method')} className="text-xs font-bold text-slate-500">Back</button>
+                             <h3 className="text-lg font-bold text-slate-800 dark:text-white">Scan QR</h3>
                              <div className="w-8"></div>
                         </div>
                         
-                        <div className="bg-white border-2 border-slate-800 p-4 rounded-xl inline-block mb-4">
-                            {upiQrCode && <img src={upiQrCode} alt="UPI QR Code" className="w-64 h-64" />}
+                        <div className="bg-white p-3 rounded-xl shadow-inner inline-block mb-3 border border-slate-200">
+                            {upiQrCode && <img src={upiQrCode} alt="UPI QR Code" className="w-48 h-48" />}
                         </div>
                         
-                        <p className="text-lg font-bold text-slate-800 dark:text-white mb-1">₹{finalTotal.toFixed(2)}</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Scan with any UPI App</p>
+                        <p className="text-2xl font-black text-slate-800 dark:text-white mb-4">₹{finalTotal.toFixed(2)}</p>
 
-                        <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2.5">
                              <button 
                                 onClick={() => handleCompleteTransaction('upi', 'completed')}
-                                className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold shadow-lg shadow-green-200"
+                                className="w-full py-2.5 bg-green-600 text-white rounded-lg font-bold shadow-lg shadow-green-200 dark:shadow-none text-sm"
                              >
-                                Payment Received
+                                Received
                              </button>
                              <button 
                                 onClick={() => handleCompleteTransaction('upi', 'queued')}
-                                className="w-full py-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl font-medium"
+                                className="w-full py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-white rounded-lg font-bold text-sm"
                              >
-                                Mark as Queued
+                                Pay Later
                              </button>
                         </div>
                     </div>
                 )}
-
             </div>
         </div>
       )}
 
       {/* Receipt Modal */}
       {showReceipt && lastTransaction && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl p-6 w-full max-w-sm flex flex-col items-center">
-                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-4">
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-fade-in">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-6 w-full max-w-sm flex flex-col items-center relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-green-500"></div>
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-3 shadow-sm">
                       <Icons.Sparkles /> 
                   </div>
-                  <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-1">Transaction Successful!</h3>
-                  <p className="text-slate-500 text-sm mb-6">Order #{lastTransaction.id.slice(0, 8)}</p>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-0.5">Success!</h3>
+                  <p className="text-slate-500 text-xs mb-5">Order #{lastTransaction.id.slice(0, 8)}</p>
 
-                  <div className="w-full bg-slate-50 dark:bg-slate-900 p-4 rounded-lg mb-6 border border-slate-200 dark:border-slate-700">
-                      <div className="flex justify-between text-sm mb-2">
-                          <span className="text-slate-500">Subtotal</span>
-                          <span className="text-slate-800 dark:text-white font-medium">₹{lastTransaction.subtotal.toFixed(2)}</span>
+                  <div className="w-full bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl mb-5 border border-slate-100 dark:border-slate-700/50 dashed-border">
+                      <div className="flex justify-between text-xs mb-2 text-slate-500">
+                          <span>Subtotal</span>
+                          <span>₹{lastTransaction.subtotal.toFixed(2)}</span>
                       </div>
-                      {lastTransaction.charges.map((c, i) => (
-                          <div key={i} className="flex justify-between text-sm mb-1">
-                              <span className="text-slate-500">{c.name}</span>
-                              <span className={c.isDiscount ? 'text-green-600' : 'text-slate-500'}>
-                                  {c.isDiscount ? '-' : ''}₹{c.amount.toFixed(2)}
-                              </span>
-                          </div>
-                      ))}
-                      <div className="border-t border-slate-200 dark:border-slate-700 my-2"></div>
-                      <div className="flex justify-between text-lg font-bold">
-                          <span className="text-slate-800 dark:text-white">Total</span>
-                          <span className="text-blue-600">₹{lastTransaction.total.toFixed(2)}</span>
+                      <div className="border-t border-dashed border-slate-200 dark:border-slate-700 my-2"></div>
+                      <div className="flex justify-between text-lg font-black text-slate-800 dark:text-white">
+                          <span>Total</span>
+                          <span>₹{lastTransaction.total.toFixed(2)}</span>
                       </div>
                   </div>
 
                   <button 
                     onClick={() => setShowReceipt(false)}
-                    className="w-full py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-lg font-medium transition-colors"
+                    className="w-full py-2.5 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-xl font-bold shadow-lg transition-transform active:scale-95 text-sm"
                   >
-                      Close & New Sale
+                      New Sale
                   </button>
               </div>
           </div>
