@@ -1,11 +1,6 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import type { FirebaseApp } from "firebase/app";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from "firebase/auth";
-import type { User as FirebaseUser } from "firebase/auth";
-import * as firestore from "firebase/firestore";
-
-// Destructure required functions from the namespace to avoid named export resolution issues
-const { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc } = firestore;
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence, User as FirebaseUser } from "firebase/auth";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc } from "firebase/firestore";
 
 let app: FirebaseApp | undefined;
 let db: any | undefined;
