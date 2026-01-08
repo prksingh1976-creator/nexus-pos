@@ -1,4 +1,5 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useShop } from '../contexts/ShopContext';
 import { Product } from '../types';
 import { Icons, getCategoryIcon } from '../constants';
@@ -7,16 +8,22 @@ import { suggestRestock, parseInvoiceImage } from '../services/geminiService';
 export const Inventory: React.FC = () => {
   const { 
     products, addProduct, updateProduct, deleteProduct, 
-    categories, addCategory, deleteCategory, 
-    tags, addTag, deleteTag 
+    categories, addCategory, deleteCategory,
+    sellers, addSeller, deleteSeller
   } = useShop();
   
+  const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [advice, setAdvice] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
+  const [filterLowStock, setFilterLowStock] = useState(false);
+
+  // Master Data Manager State
+  const [showMasterManager, setShowMasterManager] = useState(false);
+  const [activeManagerTab, setActiveManagerTab] = useState<'categories' | 'sellers'>('categories');
+  const [newMasterItem, setNewMasterItem] = useState('');
 
   // Expanded State for Product Families (by Name)
   const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
@@ -28,27 +35,29 @@ export const Inventory: React.FC = () => {
   const [scanning, setScanning] = useState(false);
 
   // Form State
-  const initialForm = { name: '', variant: '', seller: '', category: categories[0] || 'General', tags: [] as string[], price: 0, cost: 0, stock: 0, minStockLevel: 5 };
+  const initialForm = { name: '', variant: '', seller: '', category: '', price: 0, cost: 0, stock: 0, minStockLevel: 5, isVariablePrice: false };
   const [formData, setFormData] = useState(initialForm);
 
-  // Settings State
-  const [newCategory, setNewCategory] = useState('');
-  const [newTag, setNewTag] = useState('');
-  const [settingsTab, setSettingsTab] = useState<'categories' | 'tags'>('categories');
+  useEffect(() => {
+      if (location.state && location.state.filter === 'low-stock') {
+          setFilterLowStock(true);
+      }
+  }, [location]);
 
   // Filter Logic
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
         const term = searchTerm.toLowerCase();
-        return (
+        const matchesSearch = (
             p.name.toLowerCase().includes(term) ||
             p.seller.toLowerCase().includes(term) ||
             (p.variant && p.variant.toLowerCase().includes(term)) ||
-            p.category.toLowerCase().includes(term) ||
-            p.tags.some(t => t.toLowerCase().includes(term))
+            p.category.toLowerCase().includes(term)
         );
+        const matchesLowStock = filterLowStock ? p.stock < p.minStockLevel : true;
+        return matchesSearch && matchesLowStock;
     });
-  }, [products, searchTerm]);
+  }, [products, searchTerm, filterLowStock]);
 
   // Group items
   const groupedInventory = useMemo(() => {
@@ -91,14 +100,17 @@ export const Inventory: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
     const product: Product = {
       id: editingProduct ? editingProduct.id : crypto.randomUUID(),
       ...formData,
-      seller: formData.seller || 'General',
+      category: formData.category || categories[0] || 'General',
+      seller: formData.seller || sellers[0] || 'General',
       price: Number(formData.price),
       cost: Number(formData.cost),
       stock: Number(formData.stock),
       minStockLevel: Number(formData.minStockLevel),
+      isVariablePrice: formData.isVariablePrice
     };
 
     if (editingProduct) {
@@ -117,17 +129,18 @@ export const Inventory: React.FC = () => {
         variant: product.variant || '',
         seller: product.seller,
         category: product.category,
-        tags: product.tags || [],
         price: product.price,
         cost: product.cost,
         stock: product.stock,
-        minStockLevel: product.minStockLevel
+        minStockLevel: product.minStockLevel,
+        isVariablePrice: product.isVariablePrice || false
       });
     } else {
       setEditingProduct(null);
       setFormData({
           ...initialForm,
-          category: categories[0] || 'General'
+          category: categories[0] || 'General',
+          seller: sellers[0] || 'General'
       });
     }
     setShowModal(true);
@@ -145,13 +158,26 @@ export const Inventory: React.FC = () => {
     setLoadingAi(false);
   }
 
-  const toggleTag = (tag: string) => {
-    if (formData.tags.includes(tag)) {
-        setFormData({ ...formData, tags: formData.tags.filter(t => t !== tag) });
-    } else {
-        setFormData({ ...formData, tags: [...formData.tags, tag] });
-    }
-  }
+  // Master Manager Logic
+  const handleAddMasterItem = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newMasterItem.trim()) return;
+      
+      const item = newMasterItem.trim();
+      if (activeManagerTab === 'categories') {
+          addCategory(item);
+      } else {
+          addSeller(item);
+      }
+      setNewMasterItem('');
+  };
+
+  const handleDeleteMasterItem = (item: string) => {
+      if(confirm(`Delete "${item}" from list?`)) {
+          if (activeManagerTab === 'categories') deleteCategory(item);
+          else deleteSeller(item);
+      }
+  };
 
   // Handle Invoice Scanning
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -178,19 +204,25 @@ export const Inventory: React.FC = () => {
   const confirmScannedItems = () => {
       scannedItems.forEach(item => {
           if (item.name && item.stock !== undefined && item.cost !== undefined) {
+               // Auto-add new categories/sellers found in scan to prevent data loss, 
+               // even though manual entry is restricted.
+               const safeCategory = item.category || 'General';
+               const safeSeller = item.seller || 'General';
+               
+               if (!categories.includes(safeCategory)) addCategory(safeCategory);
+               if (!sellers.includes(safeSeller)) addSeller(safeSeller);
+
                addProduct({
                    id: crypto.randomUUID(),
                    name: item.name,
                    variant: item.variant || '',
-                   seller: item.seller || 'General',
-                   category: item.category || 'General',
-                   tags: [],
+                   seller: safeSeller,
+                   category: safeCategory,
                    price: item.price || 0,
                    cost: item.cost,
                    stock: item.stock,
                    minStockLevel: 5
                });
-               if (item.category) addCategory(item.category);
           }
       });
       setShowScanModal(false);
@@ -216,6 +248,12 @@ export const Inventory: React.FC = () => {
                 accept="image/*" 
                 onChange={handleFileChange} 
             />
+            <button 
+                onClick={() => setShowMasterManager(true)}
+                className="flex-1 md:flex-none px-3 py-2 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 rounded-lg hover:bg-slate-200 font-medium flex items-center justify-center space-x-2 transition-colors border border-slate-200 dark:border-slate-700"
+            >
+                <Icons.List /> <span>Manage Lists</span>
+            </button>
             <button 
                 onClick={() => fileInputRef.current?.click()}
                 disabled={scanning}
@@ -247,15 +285,24 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* Search */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-1.5">
-            <input 
+      {/* Search & Filter */}
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-1.5 flex flex-col md:flex-row gap-2">
+        <input 
             type="text" 
             placeholder="Search by product, company, or category..." 
-            className="w-full bg-transparent border-none px-3 py-1.5 outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 text-sm"
+            className="flex-1 bg-transparent border-none px-3 py-1.5 outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 text-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
         />
+        <label className={`flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors border ${filterLowStock ? 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-300' : 'bg-slate-50 border-transparent text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+            <input 
+                type="checkbox" 
+                checked={filterLowStock} 
+                onChange={e => setFilterLowStock(e.target.checked)} 
+                className="rounded text-orange-600 focus:ring-orange-500 w-4 h-4" 
+            />
+            <span className="text-xs font-bold">Low Stock Only</span>
+        </label>
       </div>
 
       <div className="space-y-4">
@@ -283,7 +330,7 @@ export const Inventory: React.FC = () => {
                     <div className="p-0">
                         {group.categories.map(category => (
                             <div key={category.name} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0">
-                                {/* Category Label - Sticky on mobile? Maybe just visually distinct */}
+                                {/* Category Label */}
                                 <div className="px-4 py-1.5 bg-slate-50/50 dark:bg-slate-800/30 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                                     {category.name}
                                 </div>
@@ -295,7 +342,6 @@ export const Inventory: React.FC = () => {
                                     const minPrice = Math.min(...productFamily.variants.map(v => v.price));
                                     const maxPrice = Math.max(...productFamily.variants.map(v => v.price));
                                     
-                                    // Responsive Card for Mobile, Table Row for Desktop
                                     return (
                                         <div key={familyId} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                                             {/* Header Row */}
@@ -341,10 +387,8 @@ export const Inventory: React.FC = () => {
                                                             <div className="flex-1 min-w-[120px]">
                                                                 <span className="font-bold text-sm text-slate-700 dark:text-slate-200 block">
                                                                     {variant.variant || 'Standard'}
+                                                                    {variant.isVariablePrice && <span className="ml-2 text-[10px] text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">Variable Price</span>}
                                                                 </span>
-                                                                <div className="flex gap-1 mt-1">
-                                                                     {variant.tags?.map(t => <span key={t} className="text-[9px] bg-slate-100 dark:bg-slate-800 px-1 rounded border border-slate-200 dark:border-slate-700">{t}</span>)}
-                                                                </div>
                                                             </div>
                                                             
                                                             <div className="flex items-center gap-4 text-xs">
@@ -393,6 +437,55 @@ export const Inventory: React.FC = () => {
         )}
       </div>
 
+      {/* Master Data Manager Modal */}
+      {showMasterManager && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold text-slate-800 dark:text-white">Manage Lists</h3>
+                      <button onClick={() => setShowMasterManager(false)} className="text-slate-400 hover:text-slate-600"><Icons.X /></button>
+                  </div>
+
+                  <div className="flex mb-4 bg-slate-100 dark:bg-slate-700 rounded-lg p-1">
+                      <button 
+                        onClick={() => setActiveManagerTab('categories')}
+                        className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${activeManagerTab === 'categories' ? 'bg-white dark:bg-slate-600 shadow-sm text-slate-800 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}
+                      >
+                          Categories
+                      </button>
+                      <button 
+                        onClick={() => setActiveManagerTab('sellers')}
+                        className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${activeManagerTab === 'sellers' ? 'bg-white dark:bg-slate-600 shadow-sm text-slate-800 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}
+                      >
+                          Brands / Sellers
+                      </button>
+                  </div>
+
+                  <form onSubmit={handleAddMasterItem} className="flex gap-2 mb-4">
+                      <input 
+                        type="text" 
+                        placeholder={`New ${activeManagerTab === 'categories' ? 'Category' : 'Seller'} Name...`}
+                        className="flex-1 border border-slate-200 dark:border-slate-600 rounded-lg p-2.5 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        value={newMasterItem}
+                        onChange={e => setNewMasterItem(e.target.value)}
+                      />
+                      <button type="submit" className="px-4 bg-blue-600 text-white rounded-lg font-bold">Add</button>
+                  </form>
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {(activeManagerTab === 'categories' ? categories : sellers).map(item => (
+                          <div key={item} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-700">
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{item}</span>
+                              <button onClick={() => handleDeleteMasterItem(item)} className="text-slate-400 hover:text-red-500">
+                                  <Icons.Trash />
+                              </button>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Product Modal */}
       {showModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
@@ -410,16 +503,19 @@ export const Inventory: React.FC = () => {
                     
                     <div className="col-span-2 md:col-span-1">
                         <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Brand / Seller</label>
-                        <input 
-                            type="text" required
+                        <select 
+                            required
                             className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             value={formData.seller} onChange={e => setFormData({...formData, seller: e.target.value})}
-                        />
+                        >
+                            {sellers.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
                     </div>
 
                     <div className="col-span-2 md:col-span-1">
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Category</label>
-                        <select 
+                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Category</label>
+                         <select 
+                            required
                             className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}
                         >
@@ -461,12 +557,27 @@ export const Inventory: React.FC = () => {
                         />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Selling Price</label>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Selling Price (Base)</label>
                         <input 
                             type="number" required step="0.01"
                             className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})}
                         />
+                    </div>
+
+                    <div className="col-span-2">
+                        <label className="flex items-center gap-2 p-3 border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                            <input 
+                                type="checkbox"
+                                checked={formData.isVariablePrice}
+                                onChange={e => setFormData({...formData, isVariablePrice: e.target.checked})}
+                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                            />
+                            <div>
+                                <span className="block text-sm font-bold text-slate-700 dark:text-slate-200">Variable Price / Quantity</span>
+                                <span className="block text-xs text-slate-500">Enable if you sell loose items by weight or custom price (e.g. Vegetables).</span>
+                            </div>
+                        </label>
                     </div>
 
                     <div className="col-span-2 flex gap-3 mt-4">

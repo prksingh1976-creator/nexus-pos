@@ -4,11 +4,11 @@ export interface Product {
   variant?: string; // e.g., "500ml", "1kg", "Large"
   seller: string; // Company or Brand Name
   category: string;
-  tags: string[]; // Array of tag strings
   price: number;
   cost: number;
   stock: number;
   minStockLevel: number; // For low stock warnings
+  isVariablePrice?: boolean; // If true, prompt for amount/qty at POS
 }
 
 export interface CartItem extends Product {
@@ -47,19 +47,40 @@ export interface Transaction {
   queueName?: string; // Custom name for the order (e.g. "Table 5")
 }
 
+export interface SmsTemplate {
+  id: string;
+  name: string;
+  content: string;
+  isDefault: boolean;
+}
+
 export interface Customer {
   id: string;
   name: string;
-  email: string;
-  phone: string;
+  phone?: string; // Optional
+  email?: string; // Optional
+  company?: string; // Optional
+  manager?: string; // Optional
+  notes?: string;   // Optional
   balance: number; // Positive means they owe money (credit), Negative means store credit
   totalSpent: number;
   lastVisit: string;
+  faceDescriptor?: number[]; // Array of 128 float numbers for face recognition
+  smsEnabled?: boolean; // Enable SMS for this specific customer
+  smsTemplateId?: string; // Optional override for specific template
 }
 
 export interface UserPreferences {
   theme: 'light' | 'dark';
   currency?: string;
+  autoShowReceipt?: boolean;
+  enableFaceRecognition?: boolean;
+  camPreviewSize?: 'small' | 'medium' | 'large';
+  showCamPreview?: boolean;
+  masterSmsEnabled?: boolean; // Global SMS toggle
+  smsTemplates?: SmsTemplate[]; // List of saved templates
+  smsServiceUrl?: string; // The endpoint to hit (e.g. localhost:3001)
+  smsDeviceIp?: string; // The Android phone IP (passed to bridge)
 }
 
 export interface User {

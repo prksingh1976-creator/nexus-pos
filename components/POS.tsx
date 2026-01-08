@@ -1,19 +1,28 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useShop } from '../contexts/ShopContext';
 import { Product, CartItem, Customer, AppliedCharge, Transaction } from '../types';
 import { Icons, getCategoryIcon } from '../constants';
 import QRCode from 'qrcode';
+import { getAllFaceDescriptors, findBestMatch, loadFaceModels } from '../services/faceRecService';
 
 export const POS: React.FC = () => {
-  const { products, customers, processTransaction, categories, user, chargeRules } = useShop();
+  const { 
+    products, customers, processTransaction, categories, user, chargeRules,
+    posCart, setPosCart, posCustomer, setPosCustomer 
+  } = useShop();
+  
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Alias context state to local variables for cleaner code
+  const cart = posCart;
+  const setCart = setPosCart;
+  const selectedCustomer = posCustomer;
+  const setSelectedCustomer = setPosCustomer;
+
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showCartMobile, setShowCartMobile] = useState(false);
   
@@ -26,9 +35,25 @@ export const POS: React.FC = () => {
   const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
 
+  // Variable Price Modal State
+  const [variableProduct, setVariableProduct] = useState<Product | null>(null);
+  const [variableInputType, setVariableInputType] = useState<'price' | 'quantity'>('price');
+  const [variableInputValue, setVariableInputValue] = useState('');
+
+  // Face Rec State
+  const sentryVideoRef = useRef<HTMLVideoElement>(null);
+  const sentryStreamRef = useRef<MediaStream | null>(null);
+  const [detectedCustomers, setDetectedCustomers] = useState<Customer[]>([]);
+
   // Per-Transaction Charge Toggles
   const [disabledChargeIds, setDisabledChargeIds] = useState<Set<string>>(new Set());
   const [customCharges, setCustomCharges] = useState<{ id: string, name: string, amount: number, isDiscount: boolean }[]>([]);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Settings for Camera Widget
+  const camSize = user?.preferences?.camPreviewSize || 'small';
+  const showCam = user?.preferences?.showCamPreview ?? true;
 
   // Load Order from Navigation (Edit Mode)
   useEffect(() => {
@@ -41,9 +66,10 @@ export const POS: React.FC = () => {
         if (location.state.queueName) {
             setQueueName(location.state.queueName);
         }
+        // Clear history state to prevent reload loop
         navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location, customers, navigate]);
+  }, [location, customers, navigate, setCart, setSelectedCustomer]);
 
   // Sync Queue Name with Customer
   useEffect(() => {
@@ -52,16 +78,92 @@ export const POS: React.FC = () => {
     }
   }, [selectedCustomer]);
 
+  // Face Recognition Sentry Logic with Robust Cleanup
+  useEffect(() => {
+      let interval: any;
+      let activeStream: MediaStream | null = null;
+      let isMounted = true;
+
+      const startCamera = async () => {
+         try {
+            if (!isMounted) return;
+            await loadFaceModels();
+            
+            if (!isMounted) return;
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+            
+            // Critical check: If component unmounted while awaiting user permission or stream
+            if (!isMounted) {
+                stream.getTracks().forEach(t => t.stop());
+                return;
+            }
+
+            activeStream = stream;
+            sentryStreamRef.current = stream;
+
+            if (sentryVideoRef.current) {
+                sentryVideoRef.current.srcObject = stream;
+                try {
+                    await sentryVideoRef.current.play();
+                } catch (e) {
+                    console.log("Play interrupted", e);
+                }
+            }
+
+            // Start Scan Loop
+            interval = setInterval(async () => {
+                if (!isMounted) return;
+                if (!sentryVideoRef.current || sentryVideoRef.current.paused || sentryVideoRef.current.ended) return;
+                
+                const descriptors = await getAllFaceDescriptors(sentryVideoRef.current);
+                
+                if (isMounted && descriptors.length > 0) {
+                    const matches: Customer[] = [];
+                    descriptors.forEach(desc => {
+                        const match = findBestMatch(desc, customers);
+                        if (match) matches.push(match);
+                    });
+                    
+                    const uniqueMatches = Array.from(new Map(matches.map(c => [c.id, c])).values());
+                    setDetectedCustomers(uniqueMatches);
+                } else if (isMounted) {
+                    setDetectedCustomers([]);
+                }
+            }, 1000);
+         } catch (err) {
+             console.error("Face Rec Camera Error:", err);
+         }
+      };
+
+      if (user?.preferences?.enableFaceRecognition) {
+          startCamera();
+      }
+
+      return () => {
+          isMounted = false;
+          if (interval) clearInterval(interval);
+          
+          if (activeStream) {
+              activeStream.getTracks().forEach(t => t.stop());
+          }
+          if (sentryStreamRef.current) {
+              sentryStreamRef.current.getTracks().forEach(t => t.stop());
+              sentryStreamRef.current = null;
+          }
+      };
+  }, [user?.preferences?.enableFaceRecognition, customers]);
+
   // Filtering Logic
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            (p.variant && p.variant.toLowerCase().includes(searchTerm.toLowerCase()));
       return matchesCategory && matchesSearch;
     });
   }, [products, selectedCategory, searchTerm]);
 
-  // Grouping Logic for Variants (Same Name => Same Group)
+  // Grouping Logic for Variants
   const groupedProducts = useMemo(() => {
       const groups: Record<string, Product[]> = {};
       filteredProducts.forEach(p => {
@@ -72,28 +174,83 @@ export const POS: React.FC = () => {
   }, [filteredProducts]);
 
   // Cart Logic
-  const addToCart = (product: Product) => {
-    if (product.stock <= 0) return;
+  const addToCart = (product: Product, quantityOverride?: number, priceOverride?: number) => {
+    if (product.stock <= 0 && !quantityOverride) return; 
+
+    if (product.isVariablePrice && quantityOverride === undefined) {
+        setVariableProduct(product);
+        setVariableInputValue('');
+        setVariableInputType('price');
+        return;
+    }
+
     setCart(prev => {
-      const existing = prev.find(item => item.id === product.id);
-      if (existing) {
-        if (existing.quantity >= product.stock) return prev;
-        return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      const qtyToAdd = quantityOverride || 1;
+      const finalPrice = priceOverride !== undefined ? priceOverride : product.price;
+
+      const existingItemIndex = prev.findIndex(item => item.id === product.id && Math.abs(item.price - finalPrice) < 0.01);
+
+      if (existingItemIndex > -1) {
+        const item = prev[existingItemIndex];
+        if (item.quantity + qtyToAdd > product.stock) return prev;
+        
+        const newCart = [...prev];
+        newCart[existingItemIndex] = { ...item, quantity: item.quantity + qtyToAdd };
+        return newCart;
       }
-      return [...prev, { ...product, quantity: 1 }];
+      
+      return [...prev, { ...product, quantity: qtyToAdd, price: finalPrice }];
     });
   };
 
-  const updateQuantity = (id: string, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === id) {
-        const newQty = Math.max(1, item.quantity + delta);
-        if (newQty > item.stock) return item;
-        return { ...item, quantity: newQty };
+  const handleVariableSubmit = () => {
+      if (!variableProduct || !variableInputValue) return;
+      const val = parseFloat(variableInputValue);
+      if (isNaN(val) || val <= 0) return;
+
+      if (variableInputType === 'quantity') {
+          addToCart(variableProduct, val); 
+      } else {
+          if (variableProduct.price > 0) {
+              const calculatedQty = val / variableProduct.price;
+              addToCart(variableProduct, calculatedQty);
+          } else {
+              addToCart(variableProduct, 1, val);
+          }
       }
-      return item;
-    }));
+      setVariableProduct(null);
   };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+        const exactMatch = products.find(p => p.name.toLowerCase() === searchTerm.toLowerCase() || p.id === searchTerm);
+        
+        if (exactMatch) {
+            addToCart(exactMatch);
+            setSearchTerm('');
+        } else if (filteredProducts.length === 1) {
+            addToCart(filteredProducts[0]);
+            setSearchTerm('');
+        }
+    }
+  };
+
+  const updateQuantity = (index: number, delta: number) => {
+    setCart(prev => {
+        const newCart = [...prev];
+        const item = newCart[index];
+        const newQty = Math.max(0.01, item.quantity + delta);
+        
+        if (newQty > item.stock && delta > 0) return prev;
+        
+        newCart[index] = { ...item, quantity: parseFloat(newQty.toFixed(3)) };
+        return newCart;
+    });
+  };
+
+  const removeItem = (index: number) => {
+      setCart(prev => prev.filter((_, i) => i !== index));
+  }
 
   // Calculations
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -182,9 +339,7 @@ export const POS: React.FC = () => {
     processTransaction(transaction);
     setLastTransaction(transaction);
     
-    // Cleanup
-    setCart([]);
-    setSelectedCustomer(null);
+    // UI Cleanup
     setShowCheckoutModal(false);
     setCheckoutStep('method');
     setShowCartMobile(false);
@@ -192,15 +347,30 @@ export const POS: React.FC = () => {
     setCustomCharges([]);
     setQueueName('');
     
+    // Note: cart and customer state are cleared in processTransaction via ShopContext
+    
     if (status === 'completed') {
-        setShowReceipt(true);
-    } else {
-        alert("Order put on hold (Queued). Check Orders tab.");
+        const autoShow = user?.preferences?.autoShowReceipt ?? true;
+        if (autoShow) {
+            setShowReceipt(true);
+        }
     }
   };
 
+  const handlePrint = () => {
+      window.print();
+  };
+
+  // Helper styles for camera size
+  const camSizeClass = {
+      small: 'w-24 h-24',
+      medium: 'w-48 h-36',
+      large: 'w-full aspect-video'
+  }[camSize];
+
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] md:h-screen flex-col md:flex-row overflow-hidden">
+    <div className="flex h-[calc(100vh-3.5rem)] md:h-screen flex-col md:flex-row overflow-hidden relative">
+      
       {/* Left: Products Grid */}
       <div className="flex-1 flex flex-col h-full overflow-hidden w-full bg-slate-50 dark:bg-slate-900">
         {/* Header Filters */}
@@ -209,11 +379,14 @@ export const POS: React.FC = () => {
                 <div className="relative flex-1">
                     <span className="absolute left-3 top-2.5 text-slate-400"><Icons.Sparkles /></span>
                     <input 
+                        ref={searchInputRef}
                         type="text" 
-                        placeholder="Search products..." 
-                        className="w-full bg-slate-100 dark:bg-slate-700 border-none rounded-xl pl-9 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 transition-all text-sm"
+                        placeholder="Search or Scan (Enter to add)..." 
+                        className="w-full bg-slate-100 dark:bg-slate-700 border-none rounded-xl pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 transition-all text-sm"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
+                        onKeyDown={handleSearchKeyDown}
+                        autoFocus
                     />
                 </div>
             </div>
@@ -242,7 +415,6 @@ export const POS: React.FC = () => {
                 {Object.keys(groupedProducts).map(productName => {
                     const group = groupedProducts[productName];
                     const firstItem = group[0];
-                    // Strict check: Multiple variants only if more than 1 item in group
                     const hasMultipleVariants = group.length > 1;
                     const isOutOfStock = !hasMultipleVariants && firstItem.stock <= 0;
 
@@ -261,7 +433,6 @@ export const POS: React.FC = () => {
                                 }
                             `}
                         >
-                            {/* Card Header (Category Icon) */}
                             <div className={`p-3 flex flex-col items-center justify-center flex-1 min-h-[110px] relative ${!hasMultipleVariants ? 'pointer-events-none' : ''}`}>
                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white bg-gradient-to-br from-blue-500 to-indigo-600 shadow-md mb-2 ${!hasMultipleVariants ? 'group-hover:scale-110' : ''} transition-transform duration-300`}>
                                     <div className="scale-90">{getCategoryIcon(firstItem.category)}</div>
@@ -276,7 +447,6 @@ export const POS: React.FC = () => {
                                 )}
                                 <p className="text-[9px] text-slate-400 mt-1 uppercase tracking-wide">{firstItem.seller}</p>
                                 
-                                {/* Stock Badge */}
                                 <div className="absolute top-2 right-2">
                                      {!hasMultipleVariants && (
                                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm ${firstItem.stock > 5 ? 'bg-emerald-500' : 'bg-red-500'}`}>
@@ -291,7 +461,6 @@ export const POS: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Card Footer: Variants or Price */}
                             <div className={`border-t border-slate-100 dark:border-slate-700 ${!hasMultipleVariants ? 'bg-slate-50 dark:bg-slate-900/50' : 'bg-white dark:bg-slate-800'}`}>
                                 {hasMultipleVariants ? (
                                     <div className="p-1.5 grid grid-cols-2 gap-1.5 bg-slate-50 dark:bg-slate-900/30">
@@ -358,7 +527,6 @@ export const POS: React.FC = () => {
          h-[80vh] md:h-auto
       `}
       >
-        {/* Mobile Drag Handle / Close */}
         <div className="md:hidden flex justify-center pt-3 pb-1" onClick={() => setShowCartMobile(false)}>
             <div className="w-12 h-1 bg-slate-300 dark:bg-slate-600 rounded-full"></div>
         </div>
@@ -376,7 +544,45 @@ export const POS: React.FC = () => {
                  )}
              </div>
 
-             {/* Customer Selector */}
+             {/* Face Rec Widget inside Sidebar */}
+             {user?.preferences?.enableFaceRecognition && (
+                 <div className={`flex ${camSize === 'large' ? 'flex-col' : 'flex-row'} gap-3 mb-4 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 transition-all`}>
+                     {showCam ? (
+                        <div className={`${camSizeClass} bg-black rounded-lg overflow-hidden relative shrink-0 transition-all duration-300`}>
+                            <video ref={sentryVideoRef} className="w-full h-full object-cover" muted playsInline />
+                        </div>
+                     ) : (
+                         /* Hidden Video for processing but invisible to user */
+                         <div className="absolute opacity-0 pointer-events-none w-1 h-1 overflow-hidden">
+                             <video ref={sentryVideoRef} muted playsInline />
+                         </div>
+                     )}
+                     
+                     <div className={`flex-1 flex flex-col justify-start gap-1 overflow-y-auto pr-1 scrollbar-thin ${camSize === 'large' ? 'max-h-32' : 'max-h-24'}`}>
+                        <div className="flex justify-between items-center sticky top-0 bg-slate-100 dark:bg-slate-800 pb-1">
+                             <p className="text-[10px] uppercase font-bold text-slate-400">Detected Faces</p>
+                             {!showCam && <span className="text-[9px] font-bold text-green-500 animate-pulse">● Active</span>}
+                        </div>
+                        {detectedCustomers.length === 0 ? (
+                            <div className="flex-1 flex items-center justify-center min-h-[50px]">
+                                <p className="text-[10px] text-slate-400 italic">Scanning...</p>
+                            </div>
+                        ) : (
+                            detectedCustomers.map(u => (
+                                <button 
+                                  key={u.id}
+                                  onClick={() => setSelectedCustomer(u)}
+                                  className={`text-left text-xs font-bold p-1.5 rounded-md transition-all border flex justify-between items-center ${selectedCustomer?.id === u.id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:border-blue-400'}`}
+                                >
+                                   <span>{u.name}</span>
+                                   {selectedCustomer?.id === u.id && <span className="w-2 h-2 rounded-full bg-green-500"></span>}
+                                </button>
+                            ))
+                        )}
+                     </div>
+                 </div>
+             )}
+
              <select 
                 className="w-full p-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 dark:text-white font-medium appearance-none cursor-pointer"
                 value={selectedCustomer?.id || ''}
@@ -384,7 +590,9 @@ export const POS: React.FC = () => {
             >
                 <option value="">Guest Customer</option>
                 {customers.map(c => (
-                    <option key={c.id} value={c.id}>{c.name} {c.balance > 0 ? `(Owes ₹${c.balance})` : ''}</option>
+                    <option key={c.id} value={c.id}>
+                        {c.name} {c.company ? `(${c.company})` : ''} {c.balance > 0 ? `[Due ₹${c.balance}]` : ''}
+                    </option>
                 ))}
             </select>
         </div>
@@ -397,10 +605,11 @@ export const POS: React.FC = () => {
                         <Icons.Cart />
                     </div>
                     <p className="font-medium text-sm">Start adding products</p>
+                    <p className="text-xs">Type in search or scan barcode</p>
                 </div>
             ) : (
-                cart.map(item => (
-                    <div key={item.id} className="flex justify-between items-center p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                cart.map((item, index) => (
+                    <div key={`${item.id}-${index}`} className="flex justify-between items-center p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700/50">
                         <div className="flex-1 min-w-0 pr-3">
                             <p className="text-sm font-bold text-slate-800 dark:text-white truncate">
                                 {item.name} 
@@ -412,12 +621,18 @@ export const POS: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-2">
                              <div className="flex items-center bg-white dark:bg-slate-700 rounded-lg shadow-sm border border-slate-200 dark:border-slate-600 h-7">
-                                <button onClick={() => updateQuantity(item.id, -1)} className="w-7 h-full flex items-center justify-center text-slate-500 hover:text-blue-600 active:bg-slate-100 rounded-l-lg">-</button>
-                                <span className="text-xs font-bold w-5 text-center text-slate-800 dark:text-white">{item.quantity}</span>
-                                <button onClick={() => updateQuantity(item.id, 1)} className="w-7 h-full flex items-center justify-center text-slate-500 hover:text-blue-600 active:bg-slate-100 rounded-r-lg">+</button>
+                                <button onClick={() => updateQuantity(index, -1)} className="w-7 h-full flex items-center justify-center text-slate-500 hover:text-blue-600 active:bg-slate-100 rounded-l-lg">-</button>
+                                <span className="text-xs font-bold w-10 text-center text-slate-800 dark:text-white truncate px-1">{item.quantity}</span>
+                                <button onClick={() => updateQuantity(index, 1)} className="w-7 h-full flex items-center justify-center text-slate-500 hover:text-blue-600 active:bg-slate-100 rounded-r-lg">+</button>
                              </div>
-                             <div className="text-right w-14">
+                             <div className="text-right w-14 relative group">
                                 <div className="font-bold text-slate-800 dark:text-white text-sm">₹{(item.price * item.quantity).toFixed(0)}</div>
+                                <button 
+                                    onClick={() => removeItem(index)}
+                                    className="absolute -right-2 -top-3 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white dark:bg-slate-800 rounded-full shadow-sm"
+                                >
+                                    <Icons.X />
+                                </button>
                              </div>
                         </div>
                     </div>
@@ -433,7 +648,6 @@ export const POS: React.FC = () => {
                         <span>Subtotal</span>
                         <span>₹{cartSubtotal.toFixed(2)}</span>
                     </div>
-                    {/* Active Charges List */}
                     {chargeRules.filter(r => r.enabled).map(rule => {
                         const isApplies = (rule.trigger === 'always') ||
                                           (rule.trigger === 'amount_threshold' && cartSubtotal > (rule.threshold || 0)) ||
@@ -485,6 +699,50 @@ export const POS: React.FC = () => {
         />
       )}
 
+      {/* Variable Price Modal */}
+      {variableProduct && (
+          <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+                  <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-1">{variableProduct.name}</h3>
+                  <p className="text-sm text-slate-500 mb-4">Variable Price Item • Base: ₹{variableProduct.price}</p>
+                  
+                  <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg mb-4">
+                      <button 
+                         onClick={() => setVariableInputType('price')}
+                         className={`flex-1 py-2 text-sm font-bold rounded-md ${variableInputType === 'price' ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600' : 'text-slate-500'}`}
+                      >
+                          Enter Total Price
+                      </button>
+                      <button 
+                         onClick={() => setVariableInputType('quantity')}
+                         className={`flex-1 py-2 text-sm font-bold rounded-md ${variableInputType === 'quantity' ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600' : 'text-slate-500'}`}
+                      >
+                          Enter Quantity
+                      </button>
+                  </div>
+
+                  <div className="relative mb-6">
+                      <span className="absolute left-4 top-3.5 text-slate-400 font-bold text-lg">
+                          {variableInputType === 'price' ? '₹' : 'x'}
+                      </span>
+                      <input 
+                          type="number" autoFocus
+                          className="w-full pl-10 pr-4 py-3 border-2 border-blue-500 rounded-xl text-2xl font-bold outline-none bg-transparent text-slate-900 dark:text-white"
+                          value={variableInputValue}
+                          onChange={e => setVariableInputValue(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleVariableSubmit()}
+                          placeholder="0"
+                      />
+                  </div>
+
+                  <div className="flex gap-3">
+                      <button onClick={() => setVariableProduct(null)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl">Cancel</button>
+                      <button onClick={handleVariableSubmit} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg">Add to Cart</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Checkout Modal */}
       {showCheckoutModal && (
         <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 md:p-4">
@@ -517,7 +775,7 @@ export const POS: React.FC = () => {
                             <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center font-bold mr-3 text-lg">A</div>
                             <div className="text-left">
                                 <p className="font-bold text-slate-900 dark:text-white text-base">Store Credit</p>
-                                <p className="text-[10px] text-slate-500">{selectedCustomer ? `Tab: ${selectedCustomer.name}` : 'Select customer first'}</p>
+                                <p className="text-xs text-slate-500">{selectedCustomer ? `Tab: ${selectedCustomer.name}` : 'Select customer first'}</p>
                             </div>
                         </button>
 
@@ -601,11 +859,11 @@ export const POS: React.FC = () => {
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-fade-in">
               <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-6 w-full max-w-sm flex flex-col items-center relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-green-500"></div>
-                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-3 shadow-sm">
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-3 shadow-sm no-print">
                       <Icons.Sparkles /> 
                   </div>
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-0.5">Success!</h3>
-                  <p className="text-slate-500 text-xs mb-5">Order #{lastTransaction.id.slice(0, 8)}</p>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-0.5 no-print">Success!</h3>
+                  <p className="text-slate-500 text-xs mb-5 no-print">Order #{lastTransaction.id.slice(0, 8)}</p>
 
                   <div className="w-full bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl mb-5 border border-slate-100 dark:border-slate-700/50 dashed-border">
                       <div className="flex justify-between text-xs mb-2 text-slate-500">
@@ -619,14 +877,59 @@ export const POS: React.FC = () => {
                       </div>
                   </div>
 
-                  <button 
-                    onClick={() => setShowReceipt(false)}
-                    className="w-full py-2.5 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-xl font-bold shadow-lg transition-transform active:scale-95 text-sm"
-                  >
-                      New Sale
-                  </button>
+                  <div className="flex gap-2 w-full no-print">
+                    <button 
+                        onClick={handlePrint}
+                        className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white rounded-xl font-bold hover:bg-slate-200 transition-colors text-sm"
+                    >
+                        Print Receipt
+                    </button>
+                    <button 
+                        onClick={() => setShowReceipt(false)}
+                        className="flex-1 py-2.5 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-xl font-bold shadow-lg transition-transform active:scale-95 text-sm"
+                    >
+                        New Sale
+                    </button>
+                  </div>
               </div>
           </div>
+      )}
+
+      {/* HIDDEN PRINT RECEIPT */}
+      {lastTransaction && (
+        <div id="printable-receipt" className="hidden">
+            <div style={{ padding: '20px', fontFamily: 'monospace', textAlign: 'center' }}>
+                <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 10px 0' }}>{user?.name || 'Nexus Shop'}</h1>
+                <p style={{ margin: '0' }}>Order #{lastTransaction.id.slice(0, 8)}</p>
+                <p style={{ margin: '0 0 20px 0' }}>{new Date(lastTransaction.date).toLocaleString()}</p>
+                
+                <div style={{ borderTop: '1px dashed black', borderBottom: '1px dashed black', padding: '10px 0', marginBottom: '20px' }}>
+                    {lastTransaction.items.map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                            <span style={{ textAlign: 'left' }}>{item.quantity}x {item.name}</span>
+                            <span>₹{(item.price * item.quantity).toFixed(2)}</span>
+                        </div>
+                    ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span>Subtotal</span>
+                    <span>₹{lastTransaction.subtotal.toFixed(2)}</span>
+                </div>
+                {lastTransaction.charges.map((c, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                        <span>{c.name}</span>
+                        <span>{c.isDiscount ? '-' : ''}₹{c.amount.toFixed(2)}</span>
+                    </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '18px', marginTop: '10px' }}>
+                    <span>Total</span>
+                    <span>₹{lastTransaction.total.toFixed(2)}</span>
+                </div>
+                
+                <p style={{ marginTop: '20px', fontSize: '12px' }}>Thank you for your business!</p>
+            </div>
+        </div>
       )}
     </div>
   );

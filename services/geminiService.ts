@@ -24,7 +24,7 @@ export const generateBusinessInsight = async (
   // Summarize data to avoid token limits and focus on key metrics
   const inventorySummary = inventory.map(p => `${p.name} ${p.variant ? `(${p.variant})` : ''} [${p.seller}] (${p.category}) - Stock: ${p.stock}`).join('\n');
   const recentSales = transactions.slice(0, 20).map(t => `Sale: ${t.total}`).join('\n');
-  const creditSummary = customers.filter(c => c.balance > 0).map(c => `${c.name}: owes ${c.balance}`).join('\n');
+  const creditSummary = customers.filter(c => c.balance > 0).map(c => `${c.name} ${c.company ? `(${c.company})` : ''}: owes ${c.balance}`).join('\n');
 
   const prompt = `
     Act as a senior retail business analyst for a shop in India. Analyze the following shop data and provide 3 short, actionable bullet points for the shop owner to improve profit or efficiency. Focus on restock needs, best-performing brands/sellers, credit risks, or inventory efficiency.
@@ -148,6 +148,7 @@ export const askAppHelp = async (userQuestion: string): Promise<string> => {
            - Users add products manually or by scanning invoice images (AI extracts data). 
            - Products are grouped by Name (e.g., "Milk" shows 500ml and 1L variants together).
            - "Smart Restock" suggests what to buy.
+           - "Manage Lists" allows users to define specific Categories and Sellers.
         
         2. **POS (Point of Sale)**:
            - Users tap items to add to cart.
@@ -157,6 +158,7 @@ export const askAppHelp = async (userQuestion: string): Promise<string> => {
         3. **Customers**:
            - Users track customer balances (Credit/Udhaar).
            - You can "Settle Debt" (Customer pays you) or "Lend/Add Credit" (Customer buys on credit).
+           - Customers can have company names and managers assigned.
         
         4. **Settings**:
            - Users can set their Shop Name, UPI ID (for QR codes), and Theme (Dark/Light).

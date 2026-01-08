@@ -22,6 +22,9 @@ export const Orders: React.FC = () => {
   const [paymentStep, setPaymentStep] = useState<'method' | 'upi_scan'>('method');
   const [upiQrCode, setUpiQrCode] = useState<string | null>(null);
 
+  // Print State
+  const [orderToPrint, setOrderToPrint] = useState<Transaction | null>(null);
+
   // Filtering Logic
   const filteredTransactions = transactions
     .filter(t => {
@@ -65,16 +68,25 @@ export const Orders: React.FC = () => {
   };
 
   const handleResumeOrder = (order: Transaction) => {
-      if (confirm("Resume this order? This will remove it from the queue and move items to POS.")) {
-          deleteTransaction(order.id);
-          navigate('/pos', { 
-              state: { 
-                  cart: order.items, 
-                  customerId: order.customerId,
-                  queueName: order.queueName 
-              } 
-          });
-      }
+      // Direct resume without confirmation
+      deleteTransaction(order.id);
+      navigate('/pos', { 
+          state: { 
+              cart: order.items, 
+              customerId: order.customerId, 
+              queueName: order.queueName 
+          } 
+      });
+  };
+
+  const handlePrint = (order: Transaction) => {
+      setOrderToPrint(order);
+      // Wait for state to update then print
+      setTimeout(() => {
+          window.print();
+          // Clear after printing (optional, helps cleanup)
+          // setOrderToPrint(null); 
+      }, 100);
   };
 
   const generateUpiQr = async () => {
@@ -246,8 +258,9 @@ export const Orders: React.FC = () => {
                             ))}
                       </div>
 
-                      {order.status === 'queued' && (
-                          <div className="flex gap-3 pt-2">
+                      <div className="flex gap-3 pt-2">
+                        {order.status === 'queued' ? (
+                          <>
                               <button 
                                   onClick={() => openPaymentModal(order)}
                                   className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition-colors"
@@ -266,8 +279,16 @@ export const Orders: React.FC = () => {
                               >
                                   Cancel
                               </button>
-                          </div>
-                      )}
+                          </>
+                        ) : (
+                          <button 
+                              onClick={() => handlePrint(order)}
+                              className="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white py-2 rounded-lg font-medium transition-colors hover:bg-slate-200"
+                          >
+                             Print Receipt
+                          </button>
+                        )}
+                      </div>
                       
                       <div className="mt-4 pt-4 border-t border-slate-50 dark:border-slate-700 flex justify-between items-center text-xs text-slate-400">
                           <span className="uppercase">Payment: {order.paymentMethod === 'pending' ? 'Pending' : order.paymentMethod}</span>
@@ -356,6 +377,43 @@ export const Orders: React.FC = () => {
                         </button>
                     </div>
                 )}
+            </div>
+        </div>
+      )}
+      
+      {/* HIDDEN PRINT RECEIPT CONTAINER */}
+      {orderToPrint && (
+        <div id="printable-receipt" className="hidden">
+            <div style={{ padding: '20px', fontFamily: 'monospace', textAlign: 'center' }}>
+                <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 10px 0' }}>{user?.name || 'Nexus Shop'}</h1>
+                <p style={{ margin: '0' }}>Order #{orderToPrint.id.slice(0, 8)}</p>
+                <p style={{ margin: '0 0 20px 0' }}>{new Date(orderToPrint.date).toLocaleString()}</p>
+                
+                <div style={{ borderTop: '1px dashed black', borderBottom: '1px dashed black', padding: '10px 0', marginBottom: '20px' }}>
+                    {orderToPrint.items.map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                            <span style={{ textAlign: 'left' }}>{item.quantity}x {item.name}</span>
+                            <span>₹{(item.price * item.quantity).toFixed(2)}</span>
+                        </div>
+                    ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span>Subtotal</span>
+                    <span>₹{orderToPrint.subtotal.toFixed(2)}</span>
+                </div>
+                {orderToPrint.charges.map((c, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                        <span>{c.name}</span>
+                        <span>{c.isDiscount ? '-' : ''}₹{c.amount.toFixed(2)}</span>
+                    </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '18px', marginTop: '10px' }}>
+                    <span>Total</span>
+                    <span>₹{orderToPrint.total.toFixed(2)}</span>
+                </div>
+                
+                <p style={{ marginTop: '20px', fontSize: '12px' }}>Thank you for your business!</p>
             </div>
         </div>
       )}

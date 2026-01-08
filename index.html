@@ -2,8 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0f172a" />
     <title>Nexus POS</title>
+    <link rel="manifest" href="./manifest.json" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -33,6 +35,7 @@
         font-family: 'Inter', sans-serif;
         background-color: #f3f4f6;
         transition: background-color 0.3s ease, color 0.3s ease;
+        overscroll-behavior-y: none; /* Prevent pull-to-refresh on mobile */
       }
       
       /* Dark mode overrides for body if Tailwind class is applied to html */
@@ -81,29 +84,138 @@
       .animate-fade-in {
         animation: fadeIn 0.2s ease-out;
       }
+
+      /* Critical Loader Styles (Inlined for speed) */
+      #root-loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background-color: #f3f4f6;
+        font-family: 'Inter', sans-serif;
+        z-index: 9999;
+        transition: opacity 0.3s ease-out;
+      }
+      @media (prefers-color-scheme: dark) {
+        #root-loader {
+          background-color: #0f172a;
+          color: white;
+        }
+      }
+      .loader-logo {
+        width: 72px;
+        height: 72px;
+        background: linear-gradient(135deg, #2563eb, #4f46e5);
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 36px;
+        font-weight: 700;
+        box-shadow: 0 20px 25px -5px rgba(37, 99, 235, 0.4);
+        margin-bottom: 32px;
+        animation: pulse-soft 2s infinite;
+      }
+      .loader-bar {
+        width: 120px;
+        height: 4px;
+        background: #e2e8f0;
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+      }
+      @media (prefers-color-scheme: dark) {
+        .loader-bar { background: #334155; }
+      }
+      .loader-progress {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 50%;
+        background: #3b82f6;
+        border-radius: 999px;
+        animation: progress 1.5s ease-in-out infinite;
+      }
+      @keyframes pulse-soft {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+      @keyframes progress {
+        0% { left: -50%; }
+        100% { left: 100%; }
+      }
+
+      /* PRINT STYLES */
+      @media print {
+        body * {
+          visibility: hidden;
+        }
+        #printable-receipt, #printable-receipt * {
+          visibility: visible;
+        }
+        #printable-receipt {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          background: white;
+          color: black;
+          padding: 0;
+          margin: 0;
+        }
+        /* Hide UI elements */
+        nav, aside, button, .no-print {
+          display: none !important;
+        }
+      }
     </style>
-  <script type="importmap">
+<script type="importmap">
 {
   "imports": {
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "recharts": "https://esm.sh/recharts@^3.6.0",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "qrcode": "https://esm.sh/qrcode@1.5.3",
-    "firebase/app": "https://esm.sh/firebase@10.8.0/app",
-    "firebase/auth": "https://esm.sh/firebase@10.8.0/auth",
-    "firebase/firestore": "https://esm.sh/firebase@10.8.0/firestore",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "qrcode": "https://esm.sh/qrcode@^1.5.4",
+    "@vladmandic/face-api": "https://esm.sh/@vladmandic/face-api@^1.7.12",
     "firebase/": "https://esm.sh/firebase@^12.7.0/",
+    "vite": "https://esm.sh/vite@^7.3.0",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "vite": "https://esm.sh/vite@^7.3.0"
+    "express": "https://esm.sh/express@^5.2.1",
+    "cors": "https://esm.sh/cors@^2.8.5",
+    "url": "https://esm.sh/url@^0.11.4",
+    "path": "https://esm.sh/path@^0.12.7",
+    "idb": "https://esm.sh/idb@^8.0.3"
   }
 }
 </script>
 </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+        <!-- Initial Loader (Visible before React Mounts) -->
+        <div id="root-loader">
+            <div class="loader-logo">N</div>
+            <div class="loader-bar">
+                <div class="loader-progress"></div>
+            </div>
+            <p style="margin-top: 16px; font-size: 12px; opacity: 0.6; font-weight: 500;">Starting Nexus...</p>
+        </div>
+    </div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('Service Worker registered'))
+            .catch(err => console.log('Service Worker failed', err));
+        });
+      }
+    </script>
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>

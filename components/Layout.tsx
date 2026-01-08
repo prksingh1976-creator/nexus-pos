@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Icons } from '../constants';
 import { useShop } from '../contexts/ShopContext';
@@ -8,12 +8,32 @@ export const Layout: React.FC = () => {
   const { user, logout } = useShop();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const location = useLocation();
 
   // Close sidebar on route change (mobile)
-  React.useEffect(() => {
+  useEffect(() => {
     setSidebarOpen(false);
   }, [location]);
+
+  // Handle PWA Install Prompt
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   if (!user) return <Outlet />;
 
@@ -100,6 +120,16 @@ export const Layout: React.FC = () => {
             <Icons.Users />
             <span className="font-medium">Customers</span>
           </NavLink>
+          
+          {deferredPrompt && (
+              <button 
+                onClick={handleInstallClick}
+                className="w-full mt-6 flex items-center space-x-2.5 p-2.5 rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition-colors text-sm font-bold"
+              >
+                  <Icons.Download />
+                  <span>Install App</span>
+              </button>
+          )}
         </nav>
 
         {/* User Profile Section */}

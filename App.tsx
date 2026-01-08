@@ -8,18 +8,25 @@ import { POS } from './components/POS';
 import { Customers } from './components/Customers';
 import { Orders } from './components/Orders';
 import { Login } from './components/Login';
+import { LoadingScreen } from './components/LoadingScreen';
 
 // Protected Route Wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useShop();
+  const { user, isLoading } = useShop();
+  
+  if (isLoading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
+  
   return <>{children}</>;
 };
 
-// Login Route Wrapper (redirects if already logged in)
+// Login Route Wrapper
 const LoginRoute: React.FC = () => {
-    const { user } = useShop();
+    const { user, isLoading } = useShop();
+    
+    if (isLoading) return <LoadingScreen />;
     if (user) return <Navigate to="/" replace />;
+    
     return <Login />;
 }
 
