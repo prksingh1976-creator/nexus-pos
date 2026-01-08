@@ -134,10 +134,10 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden font-sans">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden font-sans">
       {/* Background Decor */}
-      <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-blue-600/20 rounded-full blur-3xl animate-pulse"></div>
-      <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
+      <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-blue-600/10 dark:bg-blue-600/20 rounded-full blur-3xl animate-pulse"></div>
+      <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-purple-600/10 dark:bg-purple-600/20 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
 
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md relative z-10 border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden transition-all duration-500">
         
@@ -190,7 +190,7 @@ export const Login: React.FC = () => {
                             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Email / ID</label>
                             <input 
                                 type="email" required
-                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-all"
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
                                 placeholder="name@example.com"
                                 value={email}
                                 onChange={e => setEmail(e.target.value)}
@@ -204,7 +204,7 @@ export const Login: React.FC = () => {
                                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Shop Name</label>
                                     <input 
                                         type="text" required
-                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-all"
+                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
                                         placeholder="e.g. Fresh Mart"
                                         value={shopName}
                                         onChange={e => setShopName(e.target.value)}
@@ -214,7 +214,7 @@ export const Login: React.FC = () => {
                                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Owner Name</label>
                                     <input 
                                         type="text" required
-                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-all"
+                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
                                         placeholder="Your Name"
                                         value={ownerName}
                                         onChange={e => setOwnerName(e.target.value)}

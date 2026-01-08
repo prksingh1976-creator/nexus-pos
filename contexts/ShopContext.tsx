@@ -127,69 +127,91 @@ export const ShopProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       };
   }, []);
 
+  // --- Theme Application ---
+  useEffect(() => {
+    if (user?.preferences?.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [user?.preferences?.theme]);
+
   // Initialize App Data
   useEffect(() => {
       const init = async () => {
-          // 1. Try Load User from LocalStorage (Fast)
-          const sessionUser = localStorage.getItem('nexus_pos_user');
-          let currentUser: User | null = null;
+          try {
+              // 1. Try Load User from LocalStorage (Fast)
+              const sessionUser = localStorage.getItem('nexus_pos_user');
+              let currentUser: User | null = null;
 
-          if (sessionUser) {
-              currentUser = JSON.parse(sessionUser);
-              setUser(currentUser);
-              
-              // Load Data from IndexedDB (Async, Large Storage)
-              if (currentUser) {
-                  await loadLocalData(currentUser.id);
-              }
-          }
-
-          // 2. Try Auto-Connect Cloud
-          const savedConfig = localStorage.getItem('nexus_pos_firebase_config');
-          if (savedConfig) {
-              try {
-                  const config = JSON.parse(savedConfig);
-                  const success = initializeFirebase(config);
-                  if (success) {
-                      setIsCloudEnabled(true);
+              if (sessionUser) {
+                  try {
+                      currentUser = JSON.parse(sessionUser);
+                      setUser(currentUser);
                       
-                      // Check for active firebase session
-                      onAuthStateChange((firebaseUser) => {
-                          if (firebaseUser && currentUser) {
-                             console.log("🔥 Cloud Connected & User Restored");
-                             setupCloudListeners(currentUser.id);
-                          }
-                      });
+                      // Load Data from IndexedDB (Async, Large Storage)
+                      if (currentUser) {
+                          await loadLocalData(currentUser.id);
+                      }
+                  } catch (err) {
+                      console.error("Failed to parse local user or load data", err);
                   }
-              } catch (e) {
-                  console.error("Auto-connect cloud failed", e);
               }
-          }
 
-          setIsLoading(false);
+              // 2. Try Auto-Connect Cloud
+              const savedConfig = localStorage.getItem('nexus_pos_firebase_config');
+              if (savedConfig) {
+                  try {
+                      const config = JSON.parse(savedConfig);
+                      const success = initializeFirebase(config);
+                      if (success) {
+                          setIsCloudEnabled(true);
+                          
+                          // Check for active firebase session
+                          onAuthStateChange((firebaseUser) => {
+                              if (firebaseUser && currentUser) {
+                                 console.log("🔥 Cloud Connected & User Restored");
+                                 setupCloudListeners(currentUser.id);
+                              }
+                          });
+                      }
+                  } catch (e) {
+                      console.error("Auto-connect cloud failed", e);
+                  }
+              }
+          } catch (e) {
+              console.error("Critical Init Error:", e);
+          } finally {
+              // ALWAYS remove loading screen
+              setIsLoading(false);
+          }
       };
 
       init();
   }, []);
 
   const loadLocalData = async (userId: string) => {
-      const p = await storage.get(`nexus_pos_${userId}_products`);
-      if (p) setProducts(p);
+      try {
+          const p = await storage.get(`nexus_pos_${userId}_products`);
+          if (p) setProducts(p);
 
-      const c = await storage.get(`nexus_pos_${userId}_customers`);
-      if (c) setCustomers(c);
+          const c = await storage.get(`nexus_pos_${userId}_customers`);
+          if (c) setCustomers(c);
 
-      const t = await storage.get(`nexus_pos_${userId}_transactions`);
-      if (t) setTransactions(t);
+          const t = await storage.get(`nexus_pos_${userId}_transactions`);
+          if (t) setTransactions(t);
 
-      const cat = await storage.get(`nexus_pos_${userId}_categories`);
-      if (cat) setCategories(cat);
+          const cat = await storage.get(`nexus_pos_${userId}_categories`);
+          if (cat) setCategories(cat);
 
-      const s = await storage.get(`nexus_pos_${userId}_sellers`);
-      if (s) setSellers(s);
+          const s = await storage.get(`nexus_pos_${userId}_sellers`);
+          if (s) setSellers(s);
 
-      const r = await storage.get(`nexus_pos_${userId}_chargerules`);
-      if (r) setChargeRules(r);
+          const r = await storage.get(`nexus_pos_${userId}_chargerules`);
+          if (r) setChargeRules(r);
+      } catch (e) {
+          console.warn("Failed to load some local data from IDB", e);
+      }
   };
 
   const setupCloudListeners = (userId: string) => {
