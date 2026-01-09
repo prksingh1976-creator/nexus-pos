@@ -129,11 +129,26 @@ export const ShopProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // --- Theme Application ---
   useEffect(() => {
-    if (user?.preferences?.theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    const preference = user?.preferences?.theme || 'system';
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const applyTheme = () => {
+      const isDark = preference === 'dark' || (preference === 'system' && mediaQuery.matches);
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    };
+
+    applyTheme();
+
+    const listener = () => {
+        if (preference === 'system') applyTheme();
+    };
+
+    mediaQuery.addEventListener('change', listener);
+    return () => mediaQuery.removeEventListener('change', listener);
   }, [user?.preferences?.theme]);
 
   // Initialize App Data

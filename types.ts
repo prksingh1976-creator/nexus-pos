@@ -1,4 +1,3 @@
-
 export interface Product {
   id: string;
   name: string;
@@ -72,7 +71,7 @@ export interface Customer {
 }
 
 export interface UserPreferences {
-  theme: 'light' | 'dark';
+  theme: 'light' | 'dark' | 'system';
   currency?: string;
   autoShowReceipt?: boolean;
   enableFaceRecognition?: boolean;
@@ -82,7 +81,6 @@ export interface UserPreferences {
   smsTemplates?: SmsTemplate[]; // List of saved templates
   smsServiceUrl?: string; // The endpoint to hit (e.g. localhost:3001)
   smsDeviceIp?: string; // The Android phone IP (passed to bridge)
-  apiServerUrl?: string; // The "Real Server" URL for backend data sync
 }
 
 export interface User {

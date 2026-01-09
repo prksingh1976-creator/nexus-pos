@@ -1,46 +1,58 @@
-# Nexus POS & Shop Manager 🏪 (Hybrid Edition)
+# Nexus POS & Shop Manager 🏪
 
-This is a modern POS system designed to run on **GitHub Pages** while storing data securely on **your local PC**.
+**Nexus POS** is a modern, offline-first React application designed for small to medium-sized retail shops. It combines traditional Point of Sale functionality with AI-powered insights, inventory management, and customer credit tracking.
 
-## 🏗️ Hybrid Architecture
+![Status](https://img.shields.io/badge/Status-Active-success)
+![Tech](https://img.shields.io/badge/Tech-React_%7C_TypeScript_%7C_Tailwind-blue)
+![AI](https://img.shields.io/badge/AI-Google_Gemini-purple)
 
-1.  **Frontend (UI):** Hosted on GitHub Pages.
-2.  **Backend (Storage):** A Node.js server running on your home/shop PC.
-3.  **Secure Tunnel:** Ngrok (connects GitHub to your PC).
+## 🚀 Getting Started (Run Locally)
 
----
+You have already installed the dependencies. Follow these steps to start the app:
 
-## 🚀 Setup Guide
+1.  **Configure API Key**:
+    Create a file named `.env` in the root folder and add your Google Gemini API key:
+    ```env
+    VITE_API_KEY=your_key_here
+    ```
 
-### 1. Run the Server on your PC
-1.  Install Node.js.
-2.  Save the `nexus-server.js` script (provided in the guide) to a folder.
-3.  Install dependencies: `npm install express cors`
-4.  Run it: `node nexus-server.js`
-5.  Install **Ngrok** and run: `ngrok http 3001`
-6.  Copy the **HTTPS** URL provided by Ngrok.
+2.  **Start the Server**:
+    Run the following command:
+    ```bash
+    npm run dev
+    ```
 
-### 2. Deploy the Website to GitHub
-1.  Push your code to a GitHub repository.
-2.  In your terminal, run: `npm run deploy`
-3.  Your app will be live at `https://yourusername.github.io/your-repo-name/`.
-
-### 3. Link the Two
-1.  Open your GitHub Pages URL.
-2.  Go to **Settings > Account**.
-3.  Paste your **Ngrok HTTPS URL** into the **Backend API Server URL** field.
-4.  Click **Test** then **Save Changes**.
+3.  **Open in Browser**:
+    Visit the URL shown in the terminal (usually `http://localhost:5173`).
 
 ---
 
-## ✨ Features
-*   **Zero Cloud Costs:** No expensive database hosting needed; data stays on your hardware.
-*   **Privacy:** Customer and credit records never leave your physical computer.
-*   **Remote Access:** Access your shop dashboard from anywhere in the world while your PC is on.
+## ✨ Key Features
+
+### 🛒 Point of Sale (POS)
+*   **Fast Checkout:** Quick add-to-cart interface with category filtering.
+*   **UPI & Credit:** Support for Cash, Store Credit (Udhaar), and UPI QR codes.
+
+### 📦 Inventory
+*   **AI Invoice Scanning:** Upload a bill photo, and AI extracts items automatically.
+*   **Smart Restock:** AI suggests what to buy based on stock levels.
+
+### 👥 Customer Credit Management
+*   **Debtor Tracking:** Filter customers by "Debtors Only" to see who owes money.
+*   **Ledger:** Track every credit transaction and payment settlement.
+
+### ☁️ Data Sync
+*   **Offline First:** Works locally by default.
+*   **Cloud Sync:** Optional Firebase integration for multi-device support.
 
 ---
 
 ## 🛠️ Tech Stack
-*   **Frontend:** React 19, Tailwind CSS.
-*   **AI:** Google Gemini (Invoice Scanning & Business Insights).
-*   **Local Backend:** Node.js + Express.
+
+*   **Frontend:** React 19, TypeScript, Tailwind CSS
+*   **AI:** Google GenAI SDK (`@google/genai`)
+*   **Build:** Vite
+
+## 📄 License
+
+This project is open source and available under the [MIT License](LICENSE).

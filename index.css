@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* @tailwind directives removed to support CDN usage in non-build environments. 
+   Tailwind classes are provided via the CDN script in index.html */
 
 :root {
   color-scheme: light;

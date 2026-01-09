@@ -97,7 +97,7 @@ export const Login: React.FC = () => {
               email: email.trim(),
               avatarUrl: '',
               preferences: { 
-                  theme: 'light', 
+                  theme: 'system', 
                   autoShowReceipt: true, 
                   enableFaceRecognition: false,
                   masterSmsEnabled: false
