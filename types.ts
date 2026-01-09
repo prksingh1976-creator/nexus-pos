@@ -63,6 +63,7 @@ export interface Customer {
   manager?: string; // Optional
   notes?: string;   // Optional
   balance: number; // Positive means they owe money (credit), Negative means store credit
+  creditLimit?: number; // Maximum credit allowed
   totalSpent: number;
   lastVisit: string;
   faceDescriptor?: number[]; // Array of 128 float numbers for face recognition

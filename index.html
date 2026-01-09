@@ -218,6 +218,9 @@
       // Global Error Handler for Mobile/Production Debugging
       window.addEventListener('error', function(e) {
          console.error(e);
+         // Filter out resize/observer errors that are common and non-fatal
+         if (e.message && e.message.includes('ResizeObserver')) return;
+         
          const loader = document.getElementById('root-loader');
          if (loader) {
              loader.innerHTML = `
@@ -232,9 +235,22 @@
 
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('Service Worker registered'))
-            .catch(err => console.log('Service Worker failed', err));
+          // Wrap in try-catch to prevent origin mismatch errors in Preview environments from logging noisily
+          try {
+             const swUrl = './sw.js';
+             navigator.serviceWorker.register(swUrl)
+                .then(reg => console.log('Service Worker registered'))
+                .catch(err => {
+                    // Suppress origin mismatch errors common in cloud IDEs
+                    if (err.message && (err.message.includes('origin') || err.message.includes('scriptURL'))) {
+                        console.warn('SW Skipped: Origin mismatch (Preview Mode).');
+                    } else {
+                        console.warn('Service Worker failed', err);
+                    }
+                });
+          } catch(e) {
+              console.warn("SW Registration Error", e);
+          }
         });
       }
     </script>

@@ -318,10 +318,18 @@ export const POS: React.FC = () => {
   };
 
   const handleCompleteTransaction = (method: 'cash' | 'account' | 'upi' | 'pending', status: 'completed' | 'queued') => {
-    if (method === 'account' && !selectedCustomer) {
-      alert("Please select a customer for account credit.");
-      return;
+    if (method === 'account') {
+        if (!selectedCustomer) {
+            alert("Please select a customer for account credit.");
+            return;
+        }
+        if (selectedCustomer.creditLimit && (selectedCustomer.balance + finalTotal > selectedCustomer.creditLimit)) {
+             if (!confirm(`Credit Limit Exceeded!\n\nLimit: ₹${selectedCustomer.creditLimit}\nCurrent Balance: ₹${selectedCustomer.balance}\nNew Balance would be: ₹${selectedCustomer.balance + finalTotal}\n\nDo you want to proceed anyway?`)) {
+                 return;
+             }
+        }
     }
+
     const transaction: Transaction = {
       id: crypto.randomUUID(),
       customerId: selectedCustomer ? selectedCustomer.id : null,

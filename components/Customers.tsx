@@ -31,9 +31,10 @@ export const Customers: React.FC = () => {
       company: string;
       manager: string;
       notes: string;
+      creditLimit: string;
       smsEnabled: boolean;
       smsTemplateId: string;
-  }>({ name: '', phone: '', email: '', company: '', manager: '', notes: '', smsEnabled: false, smsTemplateId: '' });
+  }>({ name: '', phone: '', email: '', company: '', manager: '', notes: '', creditLimit: '', smsEnabled: false, smsTemplateId: '' });
 
   // Payment/Adjustment Modal
   const [showActionModal, setShowActionModal] = useState<'settle' | 'adjust' | null>(null);
@@ -101,6 +102,8 @@ export const Customers: React.FC = () => {
   const handleSaveCustomer = (e: React.FormEvent) => {
     e.preventDefault();
     
+    const limit = newCustomer.creditLimit ? parseFloat(newCustomer.creditLimit) : undefined;
+
     if (isEditing && selectedCustomer) {
         updateCustomer({
             ...selectedCustomer,
@@ -110,6 +113,7 @@ export const Customers: React.FC = () => {
             company: newCustomer.company || undefined,
             manager: newCustomer.manager || undefined,
             notes: newCustomer.notes || undefined,
+            creditLimit: limit,
             faceDescriptor: faceDescriptor || selectedCustomer.faceDescriptor,
             smsEnabled: newCustomer.smsEnabled,
             smsTemplateId: newCustomer.smsTemplateId || undefined
@@ -123,6 +127,7 @@ export const Customers: React.FC = () => {
             company: newCustomer.company || undefined,
             manager: newCustomer.manager || undefined,
             notes: newCustomer.notes || undefined,
+            creditLimit: limit,
             faceDescriptor: faceDescriptor || prev.faceDescriptor,
             smsEnabled: newCustomer.smsEnabled,
             smsTemplateId: newCustomer.smsTemplateId || undefined
@@ -137,6 +142,7 @@ export const Customers: React.FC = () => {
             manager: newCustomer.manager || undefined,
             notes: newCustomer.notes || undefined,
             balance: 0,
+            creditLimit: limit,
             totalSpent: 0,
             lastVisit: new Date().toISOString(),
             faceDescriptor: faceDescriptor,
@@ -145,7 +151,7 @@ export const Customers: React.FC = () => {
         });
     }
     
-    setNewCustomer({ name: '', phone: '', email: '', company: '', manager: '', notes: '', smsEnabled: false, smsTemplateId: '' });
+    setNewCustomer({ name: '', phone: '', email: '', company: '', manager: '', notes: '', creditLimit: '', smsEnabled: false, smsTemplateId: '' });
     setFaceDescriptor(undefined);
     setShowAddModal(false);
     setIsEditing(false);
@@ -191,6 +197,11 @@ export const Customers: React.FC = () => {
               status: 'completed'
           });
       } else if (showActionModal === 'adjust') {
+           if (selectedCustomer.creditLimit && (selectedCustomer.balance + amount > selectedCustomer.creditLimit)) {
+               if(!confirm(`Warning: This will exceed the credit limit of ₹${selectedCustomer.creditLimit}. Proceed?`)) {
+                   return;
+               }
+           }
           processTransaction({
               id: crypto.randomUUID(),
               customerId: selectedCustomer.id,
@@ -220,8 +231,41 @@ export const Customers: React.FC = () => {
       setAmountInput('');
   };
 
+  const downloadStatement = () => {
+      if (!selectedCustomer) return;
+      const history = getCustomerTransactions(selectedCustomer.id).sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+      let content = `${user?.name || 'Nexus Shop'} - Customer Statement\n`;
+      content += `Customer: ${selectedCustomer.name}\n`;
+      content += `Generated: ${new Date().toLocaleString()}\n`;
+      content += `------------------------------------------------\n`;
+      content += `Date        | Type      | Amount    | Details\n`;
+      content += `------------------------------------------------\n`;
+      
+      history.forEach(t => {
+          const date = new Date(t.date).toLocaleDateString();
+          const type = t.type === 'sale' ? 'Purchase' : 'Payment';
+          const amount = t.total.toFixed(2);
+          const items = t.items.map(i => `${i.quantity}x ${i.name}`).join(', ').substring(0, 30);
+          content += `${date.padEnd(12)}| ${type.padEnd(10)}| ₹${amount.padEnd(9)}| ${items}\n`;
+      });
+      content += `------------------------------------------------\n`;
+      content += `Current Balance Due: ₹${selectedCustomer.balance.toFixed(2)}\n`;
+      if (selectedCustomer.creditLimit) {
+          content += `Credit Limit: ₹${selectedCustomer.creditLimit}\n`;
+      }
+
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Statement_${selectedCustomer.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+  };
+
   const openAddModal = () => {
-      setNewCustomer({ name: '', phone: '', email: '', company: '', manager: '', notes: '', smsEnabled: false, smsTemplateId: '' });
+      setNewCustomer({ name: '', phone: '', email: '', company: '', manager: '', notes: '', creditLimit: '', smsEnabled: false, smsTemplateId: '' });
       setFaceDescriptor(undefined);
       setIsEditing(false);
       setShowAddModal(true);
@@ -335,6 +379,7 @@ export const Customers: React.FC = () => {
                                                     company: selectedCustomer.company || '',
                                                     manager: selectedCustomer.manager || '',
                                                     notes: selectedCustomer.notes || '',
+                                                    creditLimit: selectedCustomer.creditLimit?.toString() || '',
                                                     smsEnabled: selectedCustomer.smsEnabled || false,
                                                     smsTemplateId: selectedCustomer.smsTemplateId || ''
                                                 });
@@ -382,11 +427,14 @@ export const Customers: React.FC = () => {
                                     </div>
                                 )}
                             </div>
-                            <div className="text-right bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 hidden md:block">
+                            <div className="text-right bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 hidden md:block min-w-[150px]">
                                 <p className="text-xs text-slate-400 uppercase tracking-wide font-bold mb-1">Balance</p>
                                 <p className={`text-3xl font-black ${selectedCustomer.balance > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
                                     ₹{selectedCustomer.balance.toFixed(0)}
                                 </p>
+                                {selectedCustomer.creditLimit && (
+                                    <p className="text-[10px] text-slate-500 mt-1">Limit: ₹{selectedCustomer.creditLimit}</p>
+                                )}
                             </div>
                         </div>
                         {/* Mobile Balance Card */}
@@ -395,6 +443,9 @@ export const Customers: React.FC = () => {
                                 <p className={`text-3xl font-black ${selectedCustomer.balance > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
                                     ₹{selectedCustomer.balance.toFixed(0)}
                                 </p>
+                                {selectedCustomer.creditLimit && (
+                                    <p className="text-[10px] text-slate-500 mt-1">Limit: ₹{selectedCustomer.creditLimit}</p>
+                                )}
                         </div>
                         
                         {/* Action Buttons */}
@@ -411,6 +462,13 @@ export const Customers: React.FC = () => {
                                 className="flex-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-600 py-3 rounded-xl font-bold transition-all active:scale-[0.98] flex flex-col items-center justify-center"
                             >
                                 <span>Give Credit</span>
+                            </button>
+                            <button 
+                                onClick={downloadStatement}
+                                className="px-4 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                title="Download Statement"
+                            >
+                                <Icons.List />
                             </button>
                         </div>
                     </div>
@@ -572,11 +630,12 @@ export const Customers: React.FC = () => {
                             />
                         </div>
                         <div className="col-span-1">
-                             <label className="block text-xs font-bold text-slate-500 mb-1">MANAGER (OPT)</label>
+                             <label className="block text-xs font-bold text-slate-500 mb-1">CREDIT LIMIT (OPT)</label>
                             <input 
-                                type="text" 
+                                type="number" 
                                 className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white text-sm"
-                                value={newCustomer.manager} onChange={e => setNewCustomer({...newCustomer, manager: e.target.value})}
+                                placeholder="Unlimited"
+                                value={newCustomer.creditLimit} onChange={e => setNewCustomer({...newCustomer, creditLimit: e.target.value})}
                             />
                         </div>
                         <div className="col-span-2">
