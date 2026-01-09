@@ -71,7 +71,7 @@ export interface Customer {
 }
 
 export interface UserPreferences {
-  theme: 'light' | 'dark';
+  theme: 'light' | 'dark' | 'system';
   currency?: string;
   autoShowReceipt?: boolean;
   enableFaceRecognition?: boolean;

@@ -34,7 +34,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   // Account State
   const [name, setName] = useState(user?.name || '');
   const [upiId, setUpiId] = useState(user?.upiId || '');
-  const [theme, setTheme] = useState<'light' | 'dark'>(user?.preferences?.theme || 'light');
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(user?.preferences?.theme || 'system');
   const [autoShowReceipt, setAutoShowReceipt] = useState(user?.preferences?.autoShowReceipt ?? true);
   const [enableFaceRec, setEnableFaceRec] = useState(user?.preferences?.enableFaceRecognition ?? false);
   const [camPreviewSize, setCamPreviewSize] = useState<'small' | 'medium' | 'large'>(user?.preferences?.camPreviewSize || 'small');
@@ -72,7 +72,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     if (user) {
         setName(user.name);
         setUpiId(user.upiId || '');
-        setTheme(user.preferences?.theme || 'light');
+        setTheme(user.preferences?.theme || 'system');
         setAutoShowReceipt(user.preferences?.autoShowReceipt ?? true);
         setEnableFaceRec(user.preferences?.enableFaceRecognition ?? false);
         setCamPreviewSize(user.preferences?.camPreviewSize || 'small');
@@ -389,28 +389,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                                 )}
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-3 gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setTheme('light')}
-                                    className={`p-3 rounded-lg border-2 flex items-center justify-center space-x-2 transition-all ${
+                                    className={`p-2 rounded-lg border-2 flex items-center justify-center space-x-2 transition-all text-xs font-bold ${
                                         theme === 'light' 
                                         ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' 
                                         : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                                     }`}
                                 >
-                                    <span>Light Mode</span>
+                                    <span>Light</span>
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setTheme('dark')}
-                                    className={`p-3 rounded-lg border-2 flex items-center justify-center space-x-2 transition-all ${
+                                    className={`p-2 rounded-lg border-2 flex items-center justify-center space-x-2 transition-all text-xs font-bold ${
                                         theme === 'dark' 
                                         ? 'border-blue-500 bg-slate-800 text-white' 
                                         : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                                     }`}
                                 >
-                                    <span>Dark Mode</span>
+                                    <span>Dark</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setTheme('system')}
+                                    className={`p-2 rounded-lg border-2 flex items-center justify-center space-x-2 transition-all text-xs font-bold ${
+                                        theme === 'system' 
+                                        ? 'border-blue-500 bg-slate-100 dark:bg-slate-700 text-blue-600 dark:text-blue-300' 
+                                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                                    }`}
+                                >
+                                    <span>System</span>
                                 </button>
                             </div>
                         </div>
